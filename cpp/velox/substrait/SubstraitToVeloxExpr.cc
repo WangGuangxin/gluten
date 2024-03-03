@@ -397,7 +397,7 @@ ArrayVectorPtr SubstraitVeloxExprConverter::literalsToArrayVector(const ::substr
   }
   auto childLiteral = literal.list().values(0);
   auto elementAtFunc = [&](vector_size_t idx) { return literal.list().values(idx); };
-  auto childVector = literalsToVector(childLiteral, childSize, literal, elementAtFunc);
+  auto childVector = literalsToVector(childLiteral, childSize, elementAtFunc);
   return makeArrayVector(childVector);
 }
 
@@ -410,22 +410,27 @@ MapVectorPtr SubstraitVeloxExprConverter::literalsToMapVector(const ::substrait:
   auto& valueLiteral = literal.map().key_values(0).value();
   auto keyAtFunc = [&](vector_size_t idx) { return literal.map().key_values(idx).key(); };
   auto valueAtFunc = [&](vector_size_t idx) { return literal.map().key_values(idx).value(); };
-  auto keyVector = literalsToVector(keyLiteral, childSize, literal, keyAtFunc);
-  auto valueVector = literalsToVector(valueLiteral, childSize, literal, valueAtFunc);
+  auto keyVector = literalsToVector(keyLiteral, childSize, keyAtFunc);
+  auto valueVector = literalsToVector(valueLiteral, childSize, valueAtFunc);
   return makeMapVector(keyVector, valueVector);
 }
 
 VectorPtr SubstraitVeloxExprConverter::literalsToVector(
     const ::substrait::Expression::Literal& childLiteral,
     vector_size_t childSize,
-    const ::substrait::Expression::Literal& literal,
     std::function<::substrait::Expression::Literal(vector_size_t /* idx */)> elementAtFunc) {
   auto childTypeCase = childLiteral.literal_type_case();
   switch (childTypeCase) {
     case ::substrait::Expression_Literal::LiteralTypeCase::kNull: {
-      auto veloxType = SubstraitParser::parseType(literal.null());
+      auto veloxType = SubstraitParser::parseType(childLiteral.null());
       auto kind = veloxType->kind();
-      return VELOX_DYNAMIC_SCALAR_TYPE_DISPATCH(constructFlatVector, kind, elementAtFunc, childSize, veloxType, pool_);
+      switch(kind) {
+        case ::facebook::velox::TypeKind::ROW: {
+          return constructFlatVector<TypeKind::UNKNOWN>(elementAtFunc, childSize, UNKNOWN(), pool_);
+        }
+        default:
+          return VELOX_DYNAMIC_SCALAR_TYPE_DISPATCH_ALL(constructFlatVector, kind, elementAtFunc, childSize, veloxType, pool_);
+      }
     }
     case ::substrait::Expression_Literal::LiteralTypeCase::kIntervalDayToSecond:
       return constructFlatVector<TypeKind::BIGINT>(elementAtFunc, childSize, INTERVAL_DAY_TIME(), pool_);
@@ -494,45 +499,9 @@ RowVectorPtr SubstraitVeloxExprConverter::literalsToRowVector(const ::substrait:
     return makeEmptyRowVector(pool_);
   }
   std::vector<VectorPtr> vectors;
-  vectors.reserve(structLiteral.struct_().fields().size());
+  vectors.reserve(childSize);
   for (const auto& child : structLiteral.struct_().fields()) {
-    auto typeCase = child.literal_type_case();
-    switch (typeCase) {
-      case ::substrait::Expression_Literal::LiteralTypeCase::kIntervalDayToSecond: {
-        vectors.emplace_back(constructFlatVectorForStruct<TypeKind::BIGINT>(child, 1, INTERVAL_DAY_TIME(), pool_));
-        break;
-      }
-      case ::substrait::Expression_Literal::LiteralTypeCase::kNull: {
-        auto veloxType = SubstraitParser::parseType(child.null());
-        auto kind = veloxType->kind();
-        auto vecPtr =
-            VELOX_DYNAMIC_SCALAR_TYPE_DISPATCH(constructFlatVectorForStruct, kind, child, 1, veloxType, pool_);
-        vectors.emplace_back(vecPtr);
-        break;
-      }
-      case ::substrait::Expression_Literal::LiteralTypeCase::kList: {
-        vectors.emplace_back(literalsToArrayVector(child));
-        break;
-      }
-      case ::substrait::Expression_Literal::LiteralTypeCase::kMap: {
-        vectors.emplace_back(literalsToMapVector(child));
-        break;
-      }
-      case ::substrait::Expression_Literal::LiteralTypeCase::kStruct: {
-        vectors.emplace_back(literalsToRowVector(child));
-        break;
-      }
-      default:
-        auto veloxType = getScalarType(child);
-        if (veloxType) {
-          auto kind = veloxType->kind();
-          auto vecPtr =
-              VELOX_DYNAMIC_SCALAR_TYPE_DISPATCH(constructFlatVectorForStruct, kind, child, 1, veloxType, pool_);
-          vectors.emplace_back(vecPtr);
-        } else {
-          VELOX_NYI("literalsToRowVector not supported for type case '{}'", std::to_string(typeCase));
-        }
-    }
+    vectors.emplace_back(literalsToVector(child, 1, [&](vector_size_t idx) { return child; }));
   }
   return makeRowVector(vectors);
 }

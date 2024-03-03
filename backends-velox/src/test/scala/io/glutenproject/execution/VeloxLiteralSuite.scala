@@ -115,6 +115,10 @@ class VeloxLiteralSuite extends VeloxWholeStageTransformerSuite {
     validateOffloadResult("SELECT struct('Spark', cast(null as int))")
     validateOffloadResult("SELECT struct(cast(null as decimal))")
     validateOffloadResult("SELECT map('b', 'a', 'e', null)")
+    validateOffloadResult("SELECT array(null)")
+    validateOffloadResult("SELECT array(cast(null as int))")
+    validateOffloadResult("SELECT map(1, null)")
+    validateOffloadResult("SELECT struct(cast(null as struct<a: string>))")
   }
 
   test("Scalar Type Literal") {
@@ -129,12 +133,5 @@ class VeloxLiteralSuite extends VeloxWholeStageTransformerSuite {
     validateOffloadResult("SELECT TIMESTAMP'2020-12-31', TIMESTAMP'2020-12-30'")
     validateOffloadResult("SELECT X'1234', X'a'")
     validateOffloadResult("SELECT DATE'2020-12-31', DATE'2020-12-30'")
-  }
-
-  test("Literal Fallback") {
-    validateFallbackResult("SELECT array(null)")
-    validateFallbackResult("SELECT array(cast(null as int))")
-    validateFallbackResult("SELECT map(1, null)")
-    validateFallbackResult("SELECT struct(cast(null as struct<a: string>))")
   }
 }
