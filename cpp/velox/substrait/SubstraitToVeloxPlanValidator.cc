@@ -68,7 +68,6 @@ static const std::unordered_set<std::string> kBlackList = {
     "repeat",
     "trunc",
     "sequence",
-    "approx_percentile",
     "get_array_struct_fields"};
 
 } // namespace
@@ -1173,6 +1172,7 @@ bool SubstraitToVeloxPlanValidator::validate(const ::substrait::AggregateRel& ag
       "covar_pop",
       "covar_samp",
       "approx_distinct",
+      "approx_percentile",
       "skewness",
       "kurtosis",
       "regr_slope",
