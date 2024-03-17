@@ -329,7 +329,7 @@ if [ -z "$TARGET_BUILD_SUMMARY" ]; then
 fi
 echo "Target Velox build: $TARGET_BUILD_SUMMARY"
 
-check_commit
+#check_commit
 compile
 
 if [ $COMPILE_ARROW_JAVA == "ON" ]; then
