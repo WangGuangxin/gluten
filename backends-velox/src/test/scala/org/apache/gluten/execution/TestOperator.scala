@@ -2012,4 +2012,13 @@ class TestOperator extends VeloxWholeStageTransformerSuite with AdaptiveSparkPla
       }
     }
   }
+
+  test("Support ApproximatePercentile") {
+    runQueryAndCompare("""
+                         |SELECT approx_percentile(col, array(0.5, 0.4, 0.1), 100)
+                         |FROM VALUES (0), (1), (2), (10) AS tab(col)
+                         |""".stripMargin) {
+      checkGlutenOperatorMatch[HashAggregateExecTransformer]
+    }
+  }
 }
