@@ -67,7 +67,6 @@ static const std::unordered_set<std::string> kBlackList = {
     "json_array_length",
     "trunc",
     "sequence",
-    "approx_percentile",
     "get_array_struct_fields"};
 
 } // namespace
@@ -1029,10 +1028,14 @@ bool SubstraitToVeloxPlanValidator::validateAggRelFunctionType(const ::substrait
         isDecimal = true;
       }
     }
+    for (auto t : types) {
+      LOG(ERROR) << "###debug### type is " << t->toString();
+    }
     auto baseFuncName =
         SubstraitParser::mapToVeloxFunction(SubstraitParser::getNameBeforeDelimiter(funcSpec), isDecimal);
     auto funcName = planConverter_.toAggregationFunctionName(baseFuncName, funcStep);
     auto signaturesOpt = exec::getAggregateFunctionSignatures(funcName);
+    LOG(ERROR) << "###debug### function name is " << funcName;
     if (!signaturesOpt) {
       LOG_VALIDATION_MSG("can not find function signature for " + funcName + " in AggregateRel.");
       return false;
@@ -1040,17 +1043,31 @@ bool SubstraitToVeloxPlanValidator::validateAggRelFunctionType(const ::substrait
 
     bool resolved = false;
     for (const auto& signature : signaturesOpt.value()) {
+      LOG(ERROR) << "###debug### signature is " << signature->toString();
       exec::SignatureBinder binder(*signature, types);
       if (binder.tryBind()) {
+        LOG(ERROR) << "###debug### try bind success";
         auto resolveType = binder.tryResolveType(
             exec::isPartialOutput(funcStep) ? signature->intermediateType() : signature->returnType());
         if (resolveType == nullptr) {
           LOG_VALIDATION_MSG("Validation failed for function " + funcName + " resolve type in AggregateRel.");
           return false;
         }
+        LOG(ERROR) << "###debug### resolve type is " << resolveType->toString();
+        static const std::unordered_set<std::string> notSupportComplexTypeAggFuncs = {"set_agg", "min", "max"};
+        if (notSupportComplexTypeAggFuncs.find(baseFuncName) != notSupportComplexTypeAggFuncs.end() &&
+            exec::isRawInput(funcStep)) {
+          auto type = binder.tryResolveType(signature->argumentTypes()[0]);
+          if (type->isArray() || type->isMap() || type->isRow()) {
+            LOG_VALIDATION_MSG("Validation failed for function " + baseFuncName + " complex type is not supported.");
+            return false;
+          }
+        }
 
         resolved = true;
         break;
+      } else {
+        LOG(ERROR) << "###debug### try bind failed";
       }
     }
     if (!resolved) {
@@ -1165,6 +1182,7 @@ bool SubstraitToVeloxPlanValidator::validate(const ::substrait::AggregateRel& ag
       "covar_pop",
       "covar_samp",
       "approx_distinct",
+      "approx_percentile",
       "skewness",
       "kurtosis",
       "regr_slope",

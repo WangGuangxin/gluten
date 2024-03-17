@@ -47,6 +47,8 @@
     <module>package</module>
     <module>shims</module>
     <module>gluten-ras</module>
+    <module>gluten-data</module>
+    <module>backends-velox</module>
   </modules>
 
   <properties>
@@ -78,6 +80,14 @@
     <project.prefix>spark-sql-columnar</project.prefix>
     <jar.assembly.name.prefix>gluten</jar.assembly.name.prefix>
     <os-maven-plugin.version>1.5.0.Final</os-maven-plugin.version>
+    <sparkbundle.version>3.2</sparkbundle.version>
+    <sparkshim.module.name>spark32</sparkshim.module.name>
+    <sparkshim.artifactId>spark-sql-columnar-shims-spark32</sparkshim.artifactId>
+    <spark.version>3.2.2</spark.version>
+    <iceberg.version>1.3.1</iceberg.version>
+    <delta.package.name>delta-core</delta.package.name>
+    <delta.version>2.0.1</delta.version>
+    <delta.binary.version>20</delta.binary.version>
     <!-- To build built-in backend c++ codes -->
     <scala.recompile.mode>all</scala.recompile.mode>
     <!-- For unit tests -->
