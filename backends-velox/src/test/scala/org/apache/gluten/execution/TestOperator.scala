@@ -1872,4 +1872,38 @@ class TestOperator extends VeloxWholeStageTransformerSuite with AdaptiveSparkPla
         }
     }
   }
+
+  test("test explode_outer") {
+    Seq((1, Seq(1, 2, 3)), (2, Seq())).toDF("a", "intList").createTempView("t2")
+
+    runQueryAndCompare("""
+                         |SELECT  explode_outer(intList)  FROM t2;
+                         |""".stripMargin) {
+      checkGlutenOperatorMatch[GenerateExecTransformer]
+    }
+  }
+
+  test("test pos_explode_outer") {
+    runQueryAndCompare("""
+                         |SELECT
+                         |  posexplode_outer(*)
+                         |FROM
+                         |  (
+                         |    SELECT
+                         |      *
+                         |    FROM
+                         |    Values
+                         |      (
+                         |        Array('1', '2', '3')
+                         |      ),
+                         |      (
+                         |        Array()
+                         |      ),
+                         |      NULL
+                         |  )
+                         |
+                         |""".stripMargin) {
+      checkGlutenOperatorMatch[GenerateExecTransformer]
+    }
+  }
 }

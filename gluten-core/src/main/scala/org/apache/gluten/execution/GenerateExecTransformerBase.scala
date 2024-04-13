@@ -40,7 +40,7 @@ abstract class GenerateExecTransformerBase(
     child: SparkPlan)
   extends UnaryTransformSupport {
 
-  protected def doGeneratorValidate(generator: Generator, outer: Boolean): ValidationResult
+  protected def doGeneratorValidate(generator: Generator): ValidationResult
 
   protected def getRelNode(
       context: SubstraitContext,
@@ -66,7 +66,7 @@ abstract class GenerateExecTransformerBase(
   override def producedAttributes: AttributeSet = AttributeSet(generatorOutput)
 
   override protected def doValidateInternal(): ValidationResult = {
-    val validationResult = doGeneratorValidate(generator, outer)
+    val validationResult = doGeneratorValidate(generator)
     if (!validationResult.isValid) {
       return validationResult
     }
@@ -78,7 +78,8 @@ abstract class GenerateExecTransformerBase(
 
   override protected def doTransform(context: SubstraitContext): TransformContext = {
     val childCtx = child.asInstanceOf[TransformSupport].transform(context)
-    val relNode = getRelNode(context, childCtx.root, getGeneratorNode(context), validation = false)
+    val relNode = getRelNode(
+      context, childCtx.root, getGeneratorNode(context), outer, validation = false)
     TransformContext(child.output, output, relNode)
   }
 

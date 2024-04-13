@@ -61,15 +61,14 @@ case class CHGenerateExecTransformer(
   override protected def withNewChildInternal(newChild: SparkPlan): CHGenerateExecTransformer =
     copy(generator, requiredChildOutput, outer, generatorOutput, newChild)
 
-  override protected def doGeneratorValidate(
-      generator: Generator,
-      outer: Boolean): ValidationResult =
+  override protected def doGeneratorValidate(generator: Generator): ValidationResult =
     ValidationResult.ok
 
   override protected def getRelNode(
       context: SubstraitContext,
       inputRel: RelNode,
       generatorNode: ExpressionNode,
+      outer: Boolean,
       validation: Boolean): RelNode = {
     if (!validation) {
       RelBuilder.makeGenerateRel(

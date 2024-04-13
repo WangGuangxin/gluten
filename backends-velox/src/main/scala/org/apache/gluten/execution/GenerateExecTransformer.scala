@@ -68,13 +68,10 @@ case class GenerateExecTransformer(
   override protected def withNewChildInternal(newChild: SparkPlan): GenerateExecTransformer =
     copy(generator, requiredChildOutput, outer, generatorOutput, newChild)
 
-  override protected def doGeneratorValidate(
-      generator: Generator,
-      outer: Boolean): ValidationResult = {
-    if (!supportsGenerate(generator, outer)) {
+  override protected def doGeneratorValidate(generator: Generator): ValidationResult = {
+    if (!supportsGenerate(generator)) {
       ValidationResult.notOk(
-        s"Velox backend does not support this generator: ${generator.getClass.getSimpleName}" +
-          s", outer: $outer")
+        s"Velox backend does not support this generator: ${generator.getClass.getSimpleName}")
     } else {
       ValidationResult.ok
     }
@@ -120,9 +117,12 @@ case class GenerateExecTransformer(
       } else {
         "0"
       }
+      val isOuter = if (outer) "1" else "0"
       parametersStr
         .append("isPosExplode=")
         .append(isPosExplode)
+        .append("isOuter=")
+        .append(isOuter)
         .append("\n")
 
       // isStack: 1 for Stack, 0 for others.
@@ -161,17 +161,12 @@ case class GenerateExecTransformer(
 }
 
 object GenerateExecTransformer {
-  def supportsGenerate(generator: Generator, outer: Boolean): Boolean = {
-    // TODO: supports outer and remove this param.
-    if (outer) {
-      false
-    } else {
-      generator match {
-        case _: Inline | _: ExplodeBase | _: JsonTuple | _: Stack =>
-          true
-        case _ =>
-          false
-      }
+  def supportsGenerate(generator: Generator): Boolean = {
+    generator match {
+      case _: Inline | _: ExplodeBase | _: JsonTuple | _: Stack =>
+        true
+      case _ =>
+        false
     }
   }
 }
@@ -179,7 +174,7 @@ object GenerateExecTransformer {
 object PullOutGenerateProjectHelper extends PullOutProjectHelper {
   val JSON_PATH_PREFIX = "$."
   def pullOutPreProject(generate: GenerateExec): SparkPlan = {
-    if (GenerateExecTransformer.supportsGenerate(generate.generator, generate.outer)) {
+    if (GenerateExecTransformer.supportsGenerate(generate.generator)) {
       generate.generator match {
         case _: Inline | _: ExplodeBase =>
           val expressionMap = new mutable.HashMap[Expression, NamedExpression]()
