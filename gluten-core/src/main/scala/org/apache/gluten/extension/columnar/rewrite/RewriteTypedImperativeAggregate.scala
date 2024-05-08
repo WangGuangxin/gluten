@@ -44,7 +44,7 @@ object RewriteTypedImperativeAggregate extends RewriteSingleNode with PullOutPro
     ae.aggregateFunction match {
       case _: ApproximatePercentile =>
         ae.mode match {
-          case Partial | PartialMerge => true
+          case Partial => true
           case _ => false
         }
       case _ => false
