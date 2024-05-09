@@ -10,11 +10,8 @@ VERSION=$(. /etc/os-release && echo ${VERSION_ID})
 ARCH=`uname -m`
 
 # compile gluten jar
-$GLUTEN_DIR/dev/builddeps-veloxbe.sh --build_tests=ON --build_benchmarks=ON --enable_s3=ON --enable_hdfs=ON
-mvn clean package -Pbackends-velox -Pceleborn -Puniffle -Pspark-3.2 -DskipTests
-mvn clean package -Pbackends-velox -Pceleborn -Puniffle -Pspark-3.3 -DskipTests
-mvn clean package -Pbackends-velox -Pceleborn -Puniffle -Pspark-3.4 -DskipTests
-mvn clean package -Pbackends-velox -Pceleborn -Puniffle -Pspark-3.5 -DskipTests
+$GLUTEN_DIR/dev/builddeps-veloxbe.sh --build_tests=OFF --build_benchmarks=OFF --enable_s3=OFF --enable_hdfs=ON
+mvn clean install -Pbackends-velox -Pceleborn -Puniffle -Pspark-3.2 -DskipTests
 
 mkdir -p $THIRDPARTY_LIB
 function process_setup_ubuntu_2004 {
