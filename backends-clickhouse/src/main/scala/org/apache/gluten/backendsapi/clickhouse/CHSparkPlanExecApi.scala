@@ -40,7 +40,7 @@ import org.apache.spark.sql.catalyst.{CHAggregateFunctionRewriteRule, EqualToRew
 import org.apache.spark.sql.catalyst.catalog.BucketSpec
 import org.apache.spark.sql.catalyst.catalog.CatalogTypes.TablePartitionSpec
 import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, CollectList, CollectSet}
+import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, ApproximatePercentile, CollectList, CollectSet}
 import org.apache.spark.sql.catalyst.optimizer.BuildSide
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
@@ -610,7 +610,8 @@ class CHSparkPlanExecApi extends SparkPlanExecApi {
   override def extraExpressionMappings: Seq[Sig] = {
     List(
       Sig[CollectList](ExpressionNames.COLLECT_LIST),
-      Sig[CollectSet](ExpressionNames.COLLECT_SET)
+      Sig[CollectSet](ExpressionNames.COLLECT_SET),
+      Sig[ApproximatePercentile](ExpressionNames.APPROX_PERCENTILE)
     ) ++
       SparkShimLoader.getSparkShims.bloomFilterExpressionMappings()
   }
