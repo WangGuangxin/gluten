@@ -1989,4 +1989,17 @@ class TestOperator extends VeloxWholeStageTransformerSuite with AdaptiveSparkPla
       checkGlutenOperatorMatch[SortExecTransformer]
     }
   }
+
+  test("map_from_arrays") {
+    withTempView("t") {
+      Seq((Seq(1, 2), Seq("a", "b"))).toDF("k", "v").createOrReplaceTempView("t")
+      runQueryAndCompare(
+        """
+          |select map_from_arrays(k, v) from t
+          |""".stripMargin
+      ) {
+        checkGlutenOperatorMatch[ProjectExecTransformer]
+      }
+    }
+  }
 }
