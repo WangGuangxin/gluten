@@ -38,9 +38,7 @@ jobs:
         uses: actions/cache/restore@v3
         with:
           lookup-only: true
-          path: |
-            ./cpp/build/releases/
-            /root/.m2/repository/org/apache/arrow/
+          path: ./cpp/build/releases/
           key: cache-velox-build-${{ hashFiles('./cache-key') }}
       - name: Build Gluten Velox third party
         if: steps.check-cache.outputs.cache-hit != 'true'
@@ -51,9 +49,7 @@ jobs:
         id: cache
         uses: actions/cache/save@v3
         with:
-          path: |
-            ./cpp/build/releases/
-            /root/.m2/repository/org/apache/arrow/  
+          path: ./cpp/build/releases/
           key: cache-velox-build-${{ hashFiles('./cache-key') }}
 
   # ccache-native-lib-ubuntu-velox-ut:

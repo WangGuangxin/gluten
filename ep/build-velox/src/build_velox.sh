@@ -282,11 +282,9 @@ function compile_arrow_java_module() {
     ARROW_INSTALL_DIR="${ARROW_HOME}/../../install"
 
     pushd $ARROW_HOME/java
-    # Because arrow-bom module need the -DprocessAllModules
-    mvn versions:set -DnewVersion=15.0.0-gluten -DprocessAllModules
    
-    mvn clean install -pl bom,maven/module-info-compiler-maven-plugin,vector -am \
-          -DskipTests -Drat.skip -Dmaven.gitcommitid.skip -Dcheckstyle.skip -Dassembly.skipAssembly
+    mvn clean install -pl maven/module-info-compiler-maven-plugin -am \
+          -Dmaven.test.skip -Drat.skip -Dmaven.gitcommitid.skip -Dcheckstyle.skip
 
     # Arrow C Data Interface CPP libraries
     mvn generate-resources -P generate-libs-cdata-all-os -Darrow.c.jni.dist.dir=$ARROW_INSTALL_DIR \
@@ -299,7 +297,7 @@ function compile_arrow_java_module() {
 	    -Dmaven.test.skip -Drat.skip -Dmaven.gitcommitid.skip -Dcheckstyle.skip -N
 
     # Arrow Java libraries
-    mvn install  -Parrow-jni -P arrow-c-data -pl c,dataset -am \
+    mvn clean install  -Parrow-jni -P arrow-c-data -pl dataset,c -am \
       -Darrow.c.jni.dist.dir=$ARROW_INSTALL_DIR/lib -Darrow.dataset.jni.dist.dir=$ARROW_INSTALL_DIR/lib -Darrow.cpp.build.dir=$ARROW_INSTALL_DIR/lib \
       -Dmaven.test.skip -Drat.skip -Dmaven.gitcommitid.skip -Dcheckstyle.skip -Dassembly.skipAssembly
     popd
