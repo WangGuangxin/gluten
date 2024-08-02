@@ -1700,7 +1700,7 @@ bool SubstraitToVeloxPlanConverter::isPushdownSupported(TypePtr inputType) {
     case TypeKind::HUGEINT:
       return false;
     default:
-      return false;
+      return true;
   }
 }
 
