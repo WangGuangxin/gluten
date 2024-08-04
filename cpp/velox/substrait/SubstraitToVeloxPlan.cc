@@ -1956,6 +1956,11 @@ void SubstraitToVeloxPlanConverter::createNotEqualFilter(
       lowerFilter = std::make_unique<common::BigintRange>(
           notVariant.value<NativeType>() + 1 /*lower*/, getMax<NativeType>() /*upper*/, nullAllowed);
     }
+  } else if constexpr (std::is_same_v<RangeType, common::HugeintRange>) {
+    if (notVariant.value<NativeType>() < getMax<NativeType>()) {
+      lowerFilter = std::make_unique<common::HugeintRange>(
+          notVariant.value<NativeType>() + 1 /*lower*/, getMax<NativeType>() /*upper*/, nullAllowed);
+    }
   } else {
     lowerFilter = std::make_unique<RangeType>(
         notVariant.value<NativeType>() /*lower*/,
@@ -1974,6 +1979,11 @@ void SubstraitToVeloxPlanConverter::createNotEqualFilter(
       upperFilter = std::make_unique<common::BigintRange>(
           getLowest<NativeType>() /*lower*/, notVariant.value<NativeType>() - 1 /*upper*/, nullAllowed);
     }
+  } else if constexpr (std::is_same_v<RangeType, common::HugeintRange>) {
+    if (getLowest<NativeType>() < notVariant.value<NativeType>()) {
+      upperFilter = std::make_unique<common::HugeintRange>(
+          getLowest<NativeType>() /*lower*/, notVariant.value<NativeType>() - 1 /*upper*/, nullAllowed);
+    }
   } else {
     upperFilter = std::make_unique<RangeType>(
         getLowest<NativeType>() /*lower*/,
@@ -1985,7 +1995,7 @@ void SubstraitToVeloxPlanConverter::createNotEqualFilter(
         nullAllowed);
   }
 
-  // To avoid overlap of BigintMultiRange, keep this appending order to make sure lower bound of one range is less than
+  // To avoid overlap of BigintMultiRange/HugeintMultiRange, keep this appending order to make sure lower bound of one range is less than
   // the upper bounds of others.
   if (upperFilter) {
     colFilters.emplace_back(std::move(upperFilter));
@@ -2120,11 +2130,16 @@ void SubstraitToVeloxPlanConverter::setSubfieldFilter(
   if (colFilters.size() == 1) {
     filters[common::Subfield(inputName)] = std::move(colFilters[0]);
   } else if (colFilters.size() > 1) {
-    // BigintMultiRange should have been sorted
+    // BigintMultiRange and HugeintMultiRange should have been sorted
     if (colFilters[0]->kind() == common::FilterKind::kBigintRange) {
       std::sort(colFilters.begin(), colFilters.end(), [](const auto& a, const auto& b) {
         return dynamic_cast<common::BigintRange*>(a.get())->lower() <
             dynamic_cast<common::BigintRange*>(b.get())->lower();
+      });
+    } else if (colFilters[0]->kind() == common::FilterKind::kHugeintRange) {
+      std::sort(colFilters.begin(), colFilters.end(), [](const auto& a, const auto& b) {
+        return dynamic_cast<common::HugeintRange*>(a.get())->lower() <
+            dynamic_cast<common::HugeintRange*>(b.get())->lower();
       });
     }
     if constexpr (std::is_same_v<MultiRangeType, common::MultiRange>) {
@@ -2152,10 +2167,7 @@ void SubstraitToVeloxPlanConverter::constructSubfieldFilters(
   bool existIsNullAndIsNotNull = filterInfo.forbidsNullSet_ && filterInfo.isNullSet_;
   uint32_t rangeSize = std::max(filterInfo.lowerBounds_.size(), filterInfo.upperBounds_.size());
 
-  if constexpr (KIND == facebook::velox::TypeKind::HUGEINT) {
-    // TODO: open it when the Velox's modification is ready.
-    VELOX_NYI("constructSubfieldFilters not support for HUGEINT type");
-  } else if constexpr (KIND == facebook::velox::TypeKind::BOOLEAN) {
+  if constexpr (KIND == facebook::velox::TypeKind::BOOLEAN) {
     // Handle bool type filters.
     // Not equal.
     if (filterInfo.notValue_) {
@@ -2317,6 +2329,9 @@ void SubstraitToVeloxPlanConverter::constructSubfieldFilters(
       std::unique_ptr<FilterType> filter;
       if constexpr (std::is_same_v<RangeType, common::BigintRange>) {
         filter = std::move(std::make_unique<common::BigintRange>(
+            lowerExclusive ? lowerBound + 1 : lowerBound, upperExclusive ? upperBound - 1 : upperBound, nullAllowed));
+      } else if constexpr (std::is_same_v<RangeType, common::HugeintRange>) {
+        filter = std::move(std::make_unique<common::HugeintRange>(
             lowerExclusive ? lowerBound + 1 : lowerBound, upperExclusive ? upperBound - 1 : upperBound, nullAllowed));
       } else {
         filter = std::move(std::make_unique<RangeType>(

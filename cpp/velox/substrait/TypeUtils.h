@@ -87,6 +87,8 @@ struct RangeTraits<TypeKind::VARCHAR> {
 
 template <>
 struct RangeTraits<TypeKind::HUGEINT> {
+  using RangeType = common::HugeintRange;
+  using MultiRangeType = common::HugeintMultiRange;
   using NativeType = int128_t;
 };
 
