@@ -1054,16 +1054,6 @@ bool SubstraitToVeloxPlanValidator::validateAggRelFunctionType(const ::substrait
           return false;
         }
         LOG(ERROR) << "###debug### resolve type is " << resolveType->toString();
-        static const std::unordered_set<std::string> notSupportComplexTypeAggFuncs = {"set_agg", "min", "max"};
-        if (notSupportComplexTypeAggFuncs.find(baseFuncName) != notSupportComplexTypeAggFuncs.end() &&
-            exec::isRawInput(funcStep)) {
-          auto type = binder.tryResolveType(signature->argumentTypes()[0]);
-          if (type->isArray() || type->isMap() || type->isRow()) {
-            LOG_VALIDATION_MSG("Validation failed for function " + baseFuncName + " complex type is not supported.");
-            return false;
-          }
-        }
-
         resolved = true;
         break;
       } else {

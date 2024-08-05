@@ -45,7 +45,7 @@ case class VeloxApproximatePercentile(
       Array(
         StructField("col1", ArrayType(DoubleType)),
         StructField("col2", BooleanType, false),
-        StructField("col3", DoubleType, false),
+        StructField("col3", IntegerType, false),
         StructField("col4", IntegerType, false),
         StructField("col5", LongType, false),
         StructField("col6", childType, false),

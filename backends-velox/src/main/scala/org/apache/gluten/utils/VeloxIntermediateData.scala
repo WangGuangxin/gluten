@@ -17,7 +17,6 @@
 package org.apache.gluten.utils
 
 import org.apache.gluten.expression.ConverterUtils
-import org.apache.gluten.expression.aggregate.VeloxApproximatePercentile
 import org.apache.gluten.substrait.`type`.{TypeBuilder, TypeNode}
 
 import org.apache.spark.sql.catalyst.expressions.aggregate._
@@ -121,23 +120,7 @@ object VeloxIntermediateData {
    */
   def getInputTypes(aggregateFunc: AggregateFunction, forMergeCompanion: Boolean): Seq[DataType] = {
     if (!forMergeCompanion) {
-      // The datatype of ApproximatePercentile's third child
-      // are different between Spark and Velox.
-      aggregateFunc match {
-        case p: VeloxApproximatePercentile =>
-          p.children.map(_.dataType) match {
-            case Seq(childType, percentageType, accuracyType) =>
-              // The datatype of ApproximatePercentile's third child
-              // are different between Spark and Velox.
-              return Seq(childType, percentageType, DoubleType)
-            case s =>
-              throw new IllegalArgumentException(
-                s"Expected three children for " +
-                  s"ApproximatePercentile, but got $s")
-          }
-        case _ =>
-          return aggregateFunc.children.map(_.dataType)
-      }
+      return aggregateFunc.children.map(_.dataType)
     }
     aggregateFunc match {
       case _ @Type(veloxDataTypes: Seq[DataType]) =>

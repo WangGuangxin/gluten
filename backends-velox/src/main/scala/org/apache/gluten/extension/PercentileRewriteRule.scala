@@ -26,7 +26,7 @@ import org.apache.spark.sql.catalyst.rules.Rule
 
 /**
  * Velox's approx_percentile use array as intermediate data type so aren't compatible with vanilla
- * Spark. We here replace the it functions with velox_approx_percentile to distinguish.
+ * Spark. We here replace the it with velox_approx_percentile to distinguish.
  */
 case class PercentileRewriteRule(spark: SparkSession) extends Rule[LogicalPlan] {
   override def apply(plan: LogicalPlan): LogicalPlan = LogicalPlanSelector.maybe(spark, plan) {
