@@ -1974,6 +1974,11 @@ void SubstraitToVeloxPlanConverter::createNotEqualFilter(
       lowerFilter = std::make_unique<common::BigintRange>(
           notVariant.value<NativeType>() + 1 /*lower*/, getMax<NativeType>() /*upper*/, nullAllowed);
     }
+  } else if constexpr (std::is_same_v<RangeType, common::HugeintRange>) {
+    if (notVariant.value<NativeType>() < getMax<NativeType>()) {
+      lowerFilter = std::make_unique<common::HugeintRange>(
+          notVariant.value<NativeType>() + 1 /*lower*/, getMax<NativeType>() /*upper*/, nullAllowed);
+    }
   } else {
     lowerFilter = std::make_unique<RangeType>(
         notVariant.value<NativeType>() /*lower*/,
@@ -1990,6 +1995,11 @@ void SubstraitToVeloxPlanConverter::createNotEqualFilter(
   if constexpr (std::is_same_v<RangeType, common::BigintRange>) {
     if (getLowest<NativeType>() < notVariant.value<NativeType>()) {
       upperFilter = std::make_unique<common::BigintRange>(
+          getLowest<NativeType>() /*lower*/, notVariant.value<NativeType>() - 1 /*upper*/, nullAllowed);
+    }
+  } else if constexpr (std::is_same_v<RangeType, common::HugeintRange>) {
+    if (getLowest<NativeType>() < notVariant.value<NativeType>()) {
+      upperFilter = std::make_unique<common::HugeintRange>(
           getLowest<NativeType>() /*lower*/, notVariant.value<NativeType>() - 1 /*upper*/, nullAllowed);
     }
   } else {
@@ -2173,10 +2183,7 @@ void SubstraitToVeloxPlanConverter::constructSubfieldFilters(
   bool existIsNullAndIsNotNull = filterInfo.forbidsNullSet_ && filterInfo.isNullSet_;
   uint32_t rangeSize = std::max(filterInfo.lowerBounds_.size(), filterInfo.upperBounds_.size());
 
-  if constexpr (KIND == facebook::velox::TypeKind::HUGEINT) {
-    // TODO: open it when the Velox's modification is ready.
-    VELOX_NYI("constructSubfieldFilters not support for HUGEINT type");
-  } else if constexpr (KIND == facebook::velox::TypeKind::BOOLEAN) {
+  if constexpr (KIND == facebook::velox::TypeKind::BOOLEAN) {
     // Handle bool type filters.
     // Not equal.
     if (filterInfo.notValue_) {
@@ -2301,6 +2308,12 @@ void SubstraitToVeloxPlanConverter::constructSubfieldFilters(
       } else {
         lowerBound = getLowest<NativeType>();
       }
+    } else if constexpr (KIND == facebook::velox::TypeKind::HUGEINT) {
+      if (inputType->isLongDecimal()) {
+        lowerBound = DecimalUtil::kLongDecimalMin;
+      } else {
+        lowerBound = getLowest<NativeType>();
+      }
     } else {
       lowerBound = getLowest<NativeType>();
     }
@@ -2309,6 +2322,12 @@ void SubstraitToVeloxPlanConverter::constructSubfieldFilters(
     if constexpr (KIND == facebook::velox::TypeKind::BIGINT) {
       if (inputType->isShortDecimal()) {
         upperBound = DecimalUtil::kShortDecimalMax;
+      } else {
+        upperBound = getMax<NativeType>();
+      }
+    } else if constexpr (KIND == facebook::velox::TypeKind::HUGEINT) {
+      if (inputType->isLongDecimal()) {
+        upperBound = DecimalUtil::kLongDecimalMax;
       } else {
         upperBound = getMax<NativeType>();
       }
@@ -2340,6 +2359,9 @@ void SubstraitToVeloxPlanConverter::constructSubfieldFilters(
       std::unique_ptr<FilterType> filter;
       if constexpr (std::is_same_v<RangeType, common::BigintRange>) {
         filter = std::move(std::make_unique<common::BigintRange>(
+            lowerExclusive ? lowerBound + 1 : lowerBound, upperExclusive ? upperBound - 1 : upperBound, nullAllowed));
+      } else if constexpr (std::is_same_v<RangeType, common::HugeintRange>) {
+        filter = std::move(std::make_unique<common::HugeintRange>(
             lowerExclusive ? lowerBound + 1 : lowerBound, upperExclusive ? upperBound - 1 : upperBound, nullAllowed));
       } else {
         filter = std::move(std::make_unique<RangeType>(
