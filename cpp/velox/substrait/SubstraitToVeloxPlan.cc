@@ -2264,7 +2264,7 @@ void SubstraitToVeloxPlanConverter::constructSubfieldFilters(
     // Handle not(equal) filter.
     if (filterInfo.notValue_) {
       variant notVariant = filterInfo.notValue_.value();
-      // createNotEqualFilter<KIND, FilterType>(notVariant, filterInfo.nullAllowed_, colFilters);
+      createNotEqualFilter<KIND, FilterType>(notVariant, filterInfo.nullAllowed_, colFilters);
       // Currently, Not-equal cannot coexist with other filter conditions
       // due to multirange is in 'OR' relation but 'AND' is needed.
       VELOX_CHECK(rangeSize == 0, "LowerBounds or upperBounds conditons cannot be supported after not-equal filter.");
@@ -2363,11 +2363,6 @@ void SubstraitToVeloxPlanConverter::constructSubfieldFilters(
       } else if constexpr (std::is_same_v<RangeType, common::HugeintRange>) {
         filter = std::move(std::make_unique<common::HugeintRange>(
             lowerExclusive ? lowerBound + 1 : lowerBound, upperExclusive ? upperBound - 1 : upperBound, nullAllowed));
-      } else if constexpr (std::is_same_v<RangeType, common::TimestampRange>) {
-        filter = std::move(std::make_unique<common::TimestampRange>(
-            reinterpret_cast<Timestamp>(lowerExclusive ? lowerBound + 1 : lowerBound),
-            reinterpret_cast<Timestamp>(upperExclusive ? upperBound - 1 : upperBound),
-            nullAllowed));
       } else {
         filter = std::move(std::make_unique<RangeType>(
             lowerBound, lowerUnbounded, lowerExclusive, upperBound, upperUnbounded, upperExclusive, nullAllowed));
@@ -2444,10 +2439,6 @@ connector::hive::SubfieldFilters SubstraitToVeloxPlanConverter::mapToFilters(
           break;
         case TypeKind::HUGEINT:
           constructSubfieldFilters<TypeKind::HUGEINT, common::HugeintRange>(
-              colIdx, inputNameList[colIdx], inputType, columnToFilterInfo[colIdx], filters);
-          break;
-        case TypeKind::TIMESTAMP:
-          constructSubfieldFilters<TypeKind::TIMESTAMP, common::Filter>(
               colIdx, inputNameList[colIdx], inputType, columnToFilterInfo[colIdx], filters);
           break;
         case TypeKind::ARRAY:
