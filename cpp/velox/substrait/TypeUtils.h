@@ -92,6 +92,14 @@ struct RangeTraits<TypeKind::HUGEINT> {
   using NativeType = int128_t;
 };
 
+
+template <>
+struct RangeTraits<TypeKind::TIMESTAMP> {
+  using RangeType = common::TimestampRange;
+  using MultiRangeType = common::MultiRange;
+  using NativeType = int128_t;
+};
+
 #endif /* RANGETRAITS_H */
 
 } // namespace gluten
