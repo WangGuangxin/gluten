@@ -384,14 +384,12 @@ object ExpressionConverter extends SQLConfHelper with Logging {
         }
 
       case getArrayStructFields: GetArrayStructFields =>
-        GenericExpressionTransformer(
+        BackendsApiManager.getSparkPlanExecApiInstance.genGetArrayStructFieldsTransformer(
           substraitExprName,
-          Seq(
-            replaceWithExpressionTransformer0(
-              getArrayStructFields.child,
-              attributeSeq,
-              expressionsMap),
-            LiteralTransformer(getArrayStructFields.ordinal)),
+          replaceWithExpressionTransformer0(
+            getArrayStructFields.child,
+            attributeSeq,
+            expressionsMap),
           getArrayStructFields
         )
       case t: StringTranslate =>

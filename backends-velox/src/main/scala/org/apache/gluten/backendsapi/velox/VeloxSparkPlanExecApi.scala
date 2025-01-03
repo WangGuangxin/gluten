@@ -708,6 +708,16 @@ class VeloxSparkPlanExecApi extends SparkPlanExecApi {
     VeloxGetStructFieldTransformer(substraitExprName, childTransformer, ordinal, original)
   }
 
+  def genGetArrayStructFieldsTransformer(
+      substraitExprName: String,
+      childTransformer: ExpressionTransformer,
+      original: GetArrayStructFields): ExpressionTransformer = {
+    CreateArrayTransformer(
+      substraitExprName,
+      Seq(childTransformer, LiteralTransformer(original.ordinal)),
+      original)
+  }
+
   /**
    * To align with spark in casting string type input to other types, add trim node for trimming
    * space or whitespace. See spark's Cast.scala.

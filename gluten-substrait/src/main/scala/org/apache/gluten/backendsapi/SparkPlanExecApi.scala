@@ -388,6 +388,16 @@ trait SparkPlanExecApi {
     GetStructFieldTransformer(substraitExprName, childTransformer, original)
   }
 
+  def genGetArrayStructFieldsTransformer(
+      substraitExprName: String,
+      childTransformer: ExpressionTransformer,
+      original: GetArrayStructFields): ExpressionTransformer = {
+    GenericExpressionTransformer(
+      substraitExprName,
+      Seq(childTransformer, LiteralTransformer(original.ordinal)),
+      original)
+  }
+
   def genNamedStructTransformer(
       substraitExprName: String,
       children: Seq[ExpressionTransformer],
