@@ -56,7 +56,9 @@ case class VeloxGetStructFieldTransformer(
     child: ExpressionTransformer,
     ordinal: Int,
     original: GetStructField)
-  extends UnaryExpressionTransformer {
+  extends BinaryExpressionTransformer {
+  override def left: ExpressionTransformer = child
+  override def right: ExpressionTransformer = LiteralTransformer(ordinal)
   override def doTransform(args: Object): ExpressionNode = {
     val childNode = child.doTransform(args)
     childNode match {
@@ -70,8 +72,7 @@ case class VeloxGetStructFieldTransformer(
           node.getTypeNode.asInstanceOf[StructNode].getFieldTypes.get(ordinal)
         ExpressionBuilder.makeNullLiteral(nodeType)
       case _ =>
-        throw new GlutenNotSupportException(
-          s"Unsupported child expression of GetStructField: $original.")
+        super.doTransform(args)
     }
   }
 }
