@@ -1984,4 +1984,19 @@ class MiscOperatorSuite extends VeloxWholeStageTransformerSuite with AdaptiveSpa
       }
     }
   }
+
+  test("test GetStructField with scala function as input") {
+    withTable("t") {
+      Seq[String](
+        ("{\"a\":1,\"f\":20,\"e\":3}"),
+        ("{\"a\":1,\"f\":20}")
+      ).toDF().createOrReplaceTempView("t")
+      val query = "select from_json(a1, 'a INT, f INT, e INT').e from t"
+      runQueryAndCompare(query)(
+        df => {
+          val executedPlan = getExecutedPlan(df)
+          assert(executedPlan.count(_.isInstanceOf[ProjectExec]) == 0)
+        })
+    }
+  }
 }
