@@ -1207,9 +1207,10 @@ class VeloxAggregateFunctionsDefaultSuite extends VeloxAggregateFunctionsSuite {
       df =>
         val executedPlan = getExecutedPlan(df)
         assert(
-          executedPlan.exists(plan =>
-            plan.isInstanceOf[HashAggregateExecBaseTransformer] &&
-              plan.asInstanceOf[HashAggregateExecBaseTransformer].isIgnoreNullKeys()))
+          executedPlan.exists(
+            plan =>
+              plan.isInstanceOf[HashAggregateExecBaseTransformer] &&
+                plan.asInstanceOf[HashAggregateExecBaseTransformer].isIgnoreNullKeys()))
     }
   }
 }

@@ -27,8 +27,8 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.joins.BaseJoinExec
 
 /**
- * To identify aggregates that the groupby key is used as inner join keys.
- * In this case, we can set ignoreNullKeys to true when convert to velox's AggregateNode.
+ * To identify aggregates that the groupby key is used as inner join keys. In this case, we can set
+ * ignoreNullKeys to true when convert to velox's AggregateNode.
  */
 case class HashAggregateIgnoreNullKeysRule(session: SparkSession) extends Rule[SparkPlan] {
   override def apply(plan: SparkPlan): SparkPlan = {
