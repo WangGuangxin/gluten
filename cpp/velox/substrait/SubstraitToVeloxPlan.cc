@@ -416,9 +416,9 @@ core::PlanNodePtr SubstraitToVeloxPlanConverter::toVeloxPlan(const ::substrait::
   }
 
   if (aggRel.has_advanced_extension() &&
-        SubstraitParser::configSetInOptimization(aggRel.advanced_extension(), "ignoreNullKeys=")) {
-      ignoreNullKeys = true;
-    }
+      SubstraitParser::configSetInOptimization(aggRel.advanced_extension(), "ignoreNullKeys=")) {
+    ignoreNullKeys = true;
+  }
 
   // Get the output names of Aggregation.
   std::vector<std::string> aggOutNames;
