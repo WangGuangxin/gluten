@@ -192,7 +192,8 @@ abstract class HashAggregateExecTransformer(
   private def formatExtOptimizationString(isStreaming: Boolean): String = {
     val isStreamingStr = if (isStreaming) "1" else "0"
     val allowFlushStr = if (allowFlush) "1" else "0"
-    s"isStreaming=$isStreamingStr\nallowFlush=$allowFlushStr\n"
+    val ignoreNullKeysStr = if (ignoreNullKeys) "1" else "0"
+    s"isStreaming=$isStreamingStr\nallowFlush=$allowFlushStr\nignoreNullKeys=$ignoreNullKeysStr\n"
   }
 
   // Create aggregate function node and add to list.

@@ -1193,6 +1193,25 @@ class VeloxAggregateFunctionsDefaultSuite extends VeloxAggregateFunctionsSuite {
       }
     }
   }
+
+  test("aggregate on join keys can set ignoreNullKeys") {
+    val s =
+      """
+        |select * from
+        |  (select l_orderkey,max(l_partkey) from lineitem group by l_orderkey) a
+        |inner join
+        |  (select l_orderkey from lineitem) b
+        |on a.l_orderkey = b.l_orderkey
+        |""".stripMargin
+    runQueryAndCompare(s) {
+      df =>
+        val executedPlan = getExecutedPlan(df)
+        assert(
+          executedPlan.exists(plan =>
+            plan.isInstanceOf[HashAggregateExecBaseTransformer] &&
+              plan.asInstanceOf[HashAggregateExecBaseTransformer].isIgnoreNullKeys()))
+    }
+  }
 }
 
 class VeloxAggregateFunctionsFlushSuite extends VeloxAggregateFunctionsSuite {

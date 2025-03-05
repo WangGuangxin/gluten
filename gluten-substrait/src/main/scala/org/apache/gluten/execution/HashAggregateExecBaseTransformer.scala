@@ -52,6 +52,15 @@ abstract class HashAggregateExecBaseTransformer(
   @transient override lazy val metrics =
     BackendsApiManager.getMetricsApiInstance.genHashAggregateTransformerMetrics(sparkContext)
 
+  protected var ignoreNullKeys = false
+
+  def setIgnoreNullKeys(ignoreNullKeys: Boolean): Unit = {
+    this.ignoreNullKeys = ignoreNullKeys
+  }
+
+  // Expose for test
+  def isIgnoreNullKeys(): Boolean = ignoreNullKeys
+
   protected def isCapableForStreamingAggregation: Boolean = {
     if (!glutenConf.getConf(GlutenConfig.COLUMNAR_PREFER_STREAMING_AGGREGATE)) {
       return false
