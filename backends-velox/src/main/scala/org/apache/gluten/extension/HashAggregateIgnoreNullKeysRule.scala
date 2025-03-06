@@ -22,7 +22,6 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.Inner
 import org.apache.spark.sql.catalyst.rules.Rule
-import org.apache.spark.sql.catalyst.trees.TreePattern
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.joins.BaseJoinExec
 
@@ -32,15 +31,15 @@ import org.apache.spark.sql.execution.joins.BaseJoinExec
  */
 case class HashAggregateIgnoreNullKeysRule(session: SparkSession) extends Rule[SparkPlan] {
   override def apply(plan: SparkPlan): SparkPlan = {
-    plan.transformUpWithPruning(_.containsPattern(TreePattern.JOIN)) {
+    plan.transformUp {
       case join: BaseJoinExec if join.joinType == Inner =>
-        setIgnoreNullForAggreateOnJoinKeys(join.left, join.leftKeys)
-        setIgnoreNullForAggreateOnJoinKeys(join.right, join.rightKeys)
+        setIgnoreNullForAggregateOnJoinKeys(join.left, join.leftKeys)
+        setIgnoreNullForAggregateOnJoinKeys(join.right, join.rightKeys)
         join
     }
   }
 
-  private def setIgnoreNullForAggreateOnJoinKeys(
+  private def setIgnoreNullForAggregateOnJoinKeys(
       plan: SparkPlan,
       joinKeys: Seq[Expression]): Unit = {
     plan match {
