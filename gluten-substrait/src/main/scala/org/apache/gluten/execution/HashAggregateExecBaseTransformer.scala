@@ -96,6 +96,7 @@ abstract class HashAggregateExecBaseTransformer(
       s"HashAggregateTransformer(keys=$keyString, " +
         s"functions=$functionString, " +
         s"isStreamingAgg=$isCapableForStreamingAggregation, " +
+        s"ignoreNullKeys=$ignoreNullKeys, " +
         s"output=$outputString)"
     } else {
       s"HashAggregateTransformer(keys=$keyString, " +
