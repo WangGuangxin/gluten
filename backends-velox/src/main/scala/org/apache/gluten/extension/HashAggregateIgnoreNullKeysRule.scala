@@ -44,7 +44,7 @@ case class HashAggregateIgnoreNullKeysRule(session: SparkSession) extends Rule[S
       joinKeys: Seq[Expression]): Unit = {
     plan match {
       case agg: HashAggregateExecBaseTransformer
-          if semanticEquals(agg.aggregateExpressions, joinKeys) =>
+          if semanticEquals(agg.groupingExpressions, joinKeys) =>
         agg.setIgnoreNullKeys(true)
       case _ =>
     }
