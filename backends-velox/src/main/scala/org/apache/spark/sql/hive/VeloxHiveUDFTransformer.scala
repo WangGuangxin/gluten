@@ -26,15 +26,7 @@ object VeloxHiveUDFTransformer {
   def replaceWithExpressionTransformer(
       expr: Expression,
       attributeSeq: Seq[Attribute]): ExpressionTransformer = {
-    val (udfName, udfClassName) = expr match {
-      case s: HiveSimpleUDF =>
-        (s.name.stripPrefix("default."), s.funcWrapper.functionClassName)
-      case g: HiveGenericUDF =>
-        (g.name.stripPrefix("default."), g.funcWrapper.functionClassName)
-      case _ =>
-        throw new GlutenNotSupportException(
-          s"Expression $expr is not a HiveSimpleUDF or HiveGenericUDF")
-    }
+    val (udfName, udfClassName) = HiveUDFUtil.extractUDFNameAndClassName(expr)
 
     if (UDFResolver.UDFNames.contains(udfClassName)) {
       val udfExpression = UDFResolver
@@ -45,5 +37,9 @@ object VeloxHiveUDFTransformer {
     } else {
       HiveUDFTransformer.genTransformerFromUDFMappings(udfName, expr, attributeSeq)
     }
+  }
+
+  def isHiveUDFRewritted(): Unit = {
+
   }
 }

@@ -16,15 +16,32 @@
  */
 package org.apache.spark.sql.hive
 
+import org.apache.gluten.exception.GlutenNotSupportException
 import org.apache.spark.sql.catalyst.expressions.Expression
 
-object HiveUdfUtil {
-  def isHiveUdf(expr: Expression): Boolean = expr match {
+object HiveUDFUtil {
+  def isHiveUDF(expr: Expression): Boolean = expr match {
     case _: HiveSimpleUDF => true
     case _: HiveGenericUDF => true
-    case _: HiveUDAFFunction => true
     case _: HiveGenericUDTF => true
     case _ => false
   }
 
+  def isHiveUDAF(expr: Expression): Boolean = expr match {
+    case _: HiveUDAFFunction => true
+    case _ => false
+  }
+
+  def extractUDFNameAndClassName(expr: Expression): (String, String) = expr match {
+    case s: HiveSimpleUDF =>
+      (s.name.stripPrefix("default."), s.funcWrapper.functionClassName)
+    case g: HiveGenericUDF =>
+      (g.name.stripPrefix("default."), g.funcWrapper.functionClassName)
+    case g: HiveGenericUDF =>
+      (g.name.stripPrefix("default."), g.funcWrapper.functionClassName)
+    case _ =>
+      throw new GlutenNotSupportException(
+        s"Expression $expr is not a HiveSimpleUDF or HiveGenericUDF")
+  }
 }
+
