@@ -18,15 +18,12 @@ package org.apache.gluten.execution
 
 import org.apache.gluten.backendsapi.BackendsApiManager
 import org.apache.gluten.extension.ValidationResult
-import org.apache.gluten.extension.columnar.transition.Convention
-
+import org.apache.gluten.metrics.MetricsUpdater
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Attribute, NamedExpression, SortOrder}
-import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, SinglePartition}
-import org.apache.spark.sql.catalyst.util.truncatedString
-import org.apache.spark.sql.execution.{ColumnarCollapseTransformStages, ColumnarShuffleExchangeExec, SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.catalyst.expressions.{NamedExpression, SortOrder}
+import org.apache.spark.sql.catalyst.plans.physical.SinglePartition
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
+import org.apache.spark.sql.execution.{ColumnarCollapseTransformStages, ColumnarShuffleExchangeExec, SparkPlan}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 import java.util.concurrent.atomic.AtomicInteger
@@ -40,31 +37,10 @@ case class TakeOrderedAndProjectExecTransformer(
     projectList: Seq[NamedExpression],
     child: SparkPlan,
     offset: Int = 0)
-  extends UnaryExecNode
-  with ValidatablePlan {
-  override def outputPartitioning: Partitioning = SinglePartition
-  override def outputOrdering: Seq[SortOrder] = sortOrder
-  override def batchType(): Convention.BatchType = BackendsApiManager.getSettings.primaryBatchType
-  override def rowType0(): Convention.RowType = Convention.RowType.None
-
-  override def output: Seq[Attribute] = {
-    projectList.map(_.toAttribute)
-  }
-
-  override def simpleString(maxFields: Int): String = {
-    val orderByString = truncatedString(sortOrder, "[", ",", "]", maxFields)
-    val outputString = truncatedString(output, "[", ",", "]", maxFields)
-
-    s"TakeOrderedAndProjectExecTransformer (limit=$limit, " +
-      s"orderBy=$orderByString, output=$outputString)"
-  }
+  extends TakeOrderedAndProjectExecTransformerBase(limit, sortOrder, projectList, child, offset)  {
 
   override protected def withNewChildInternal(newChild: SparkPlan): SparkPlan = {
     copy(child = newChild)
-  }
-
-  override protected def doExecute(): RDD[InternalRow] = {
-    throw new UnsupportedOperationException(s"This operator doesn't support doExecute().")
   }
 
   override protected def doValidateInternal(): ValidationResult = {
@@ -161,14 +137,12 @@ case class TakeOrderedAndProjectExecTransformer(
         finalLimitPlan
       }
 
-      val collapsed =
-        BackendsApiManager.getSparkPlanExecApiInstance.maybeCollapseTakeOrderedAndProject(
-          projectPlan)
-
       val finalPlan =
-        WholeStageTransformer(collapsed)(transformStageCounter.incrementAndGet())
+        WholeStageTransformer(projectPlan)(transformStageCounter.incrementAndGet())
 
       finalPlan.executeColumnar()
     }
   }
+
+  override def metricsUpdater(): MetricsUpdater = MetricsUpdater.Todo
 }

@@ -884,21 +884,6 @@ class VeloxSparkPlanExecApi extends SparkPlanExecApi {
     PullOutArrowEvalPythonPreProjectHelper.pullOutPreProject(arrowEvalPythonExec)
   }
 
-  override def maybeCollapseTakeOrderedAndProject(plan: SparkPlan): SparkPlan = {
-    // This to-top-n optimization assumes exchange operators were already placed in input plan.
-    plan.transformUp {
-      case p @ LimitExecTransformer(SortExecTransformer(sortOrder, _, child, _), 0, count) =>
-        val global = child.outputPartitioning.satisfies(AllTuples)
-        val topN = TopNTransformer(count, sortOrder, global, child)
-        if (topN.doValidate().ok()) {
-          topN
-        } else {
-          p
-        }
-      case other => other
-    }
-  }
-
   override def genHiveUDFTransformer(
       expr: Expression,
       attributeSeq: Seq[Attribute]): ExpressionTransformer = {
@@ -921,4 +906,11 @@ class VeloxSparkPlanExecApi extends SparkPlanExecApi {
       child: Seq[SparkPlan]): ColumnarRangeBaseExec =
     ColumnarRangeExec(start, end, step, numSlices, numElements, outputAttributes, child)
 
+  override def genTakeOrderedAndProjectExecTransformer(
+      limit: Long,
+      sortOrder: Seq[SortOrder],
+      projectList: Seq[NamedExpression],
+      child: SparkPlan,
+      offset: Int): TakeOrderedAndProjectExecTransformerBase =
+    TopNTransformer(limit, sortOrder, projectList, child, offset)
 }

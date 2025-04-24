@@ -666,8 +666,6 @@ trait SparkPlanExecApi {
   def genPreProjectForArrowEvalPythonExec(arrowEvalPythonExec: ArrowEvalPythonExec): SparkPlan =
     arrowEvalPythonExec
 
-  def maybeCollapseTakeOrderedAndProject(plan: SparkPlan): SparkPlan = plan
-
   def genDecimalRoundExpressionOutput(decimalType: DecimalType, toScale: Int): DecimalType = {
     val p = decimalType.precision
     val s = decimalType.scale
@@ -731,6 +729,13 @@ trait SparkPlanExecApi {
       children: Seq[ExpressionTransformer],
       expr: Expression): ExpressionTransformer =
     GenericExpressionTransformer(substraitName, children, expr)
+
+  def genTakeOrderedAndProjectExecTransformer(
+      limit: Long,
+      sortOrder: Seq[SortOrder],
+      projectList: Seq[NamedExpression],
+      child: SparkPlan,
+      offset: Int): TakeOrderedAndProjectExecTransformerBase
 
   def isSupportRDDScanExec(plan: RDDScanExec): Boolean = false
 

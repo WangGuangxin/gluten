@@ -259,12 +259,8 @@ object OffloadOthers {
           logDebug(s"Columnar Processing for ${plan.getClass} is currently supported.")
           val child = plan.child
           val (limit, offset) = SparkShimLoader.getSparkShims.getLimitAndOffsetFromTopK(plan)
-          TakeOrderedAndProjectExecTransformer(
-            limit,
-            plan.sortOrder,
-            plan.projectList,
-            child,
-            offset)
+          BackendsApiManager.getSparkPlanExecApiInstance
+            .genTakeOrderedAndProjectExecTransformer(limit, plan.sortOrder, plan.projectList, child, offset)
         case plan: WindowExec =>
           WindowExecTransformer(
             plan.windowExpression,

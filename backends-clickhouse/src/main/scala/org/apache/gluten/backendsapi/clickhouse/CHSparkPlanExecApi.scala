@@ -973,6 +973,14 @@ class CHSparkPlanExecApi extends SparkPlanExecApi with Logging {
     case _ => super.genFlattenedExpressionTransformer(substraitName, children, expr)
   }
 
+  override  def genTakeOrderedAndProjectExecTransformer(
+      limit: Long,
+      sortOrder: Seq[SortOrder],
+      projectList: Seq[NamedExpression],
+      child: SparkPlan,
+      offset: Int): TakeOrderedAndProjectExecTransformerBase =
+    TakeOrderedAndProjectExecTransformer(limit, sortOrder, projectList, child, offset)
+
   override def isSupportRDDScanExec(plan: RDDScanExec): Boolean = true
 
   override def getRDDScanTransform(plan: RDDScanExec): RDDScanTransformer =

@@ -21,12 +21,8 @@ import org.apache.gluten.extension.ValidationResult
 import org.apache.gluten.metrics.MetricsUpdater
 import org.apache.gluten.substrait.SubstraitContext
 import org.apache.gluten.substrait.rel.{RelBuilder, RelNode}
-
-import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder}
-import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, Distribution, Partitioning, UnspecifiedDistribution}
-import org.apache.spark.sql.catalyst.util.truncatedString
+import org.apache.spark.sql.catalyst.expressions.{Attribute, NamedExpression, SortOrder}
 import org.apache.spark.sql.execution.SparkPlan
-
 import io.substrait.proto.SortField
 
 import scala.collection.JavaConverters._
@@ -34,29 +30,19 @@ import scala.collection.JavaConverters._
 case class TopNTransformer(
     limit: Long,
     sortOrder: Seq[SortOrder],
-    global: Boolean,
-    child: SparkPlan)
-  extends UnaryTransformSupport {
-  override def output: Seq[Attribute] = child.output
-  override def outputPartitioning: Partitioning = child.outputPartitioning
-  override def outputOrdering: Seq[SortOrder] = sortOrder
-
-  override def requiredChildDistribution: Seq[Distribution] =
-    if (global) AllTuples :: Nil else UnspecifiedDistribution :: Nil
-
-  override def simpleString(maxFields: Int): String = {
-    val orderByString = truncatedString(sortOrder, "[", ",", "]", maxFields)
-    val outputString = truncatedString(output, "[", ",", "]", maxFields)
-
-    s"TopNTransformer (limit=$limit, " +
-      s"orderBy=$orderByString, global=$global, output=$outputString)"
-  }
+    projectList: Seq[NamedExpression],
+    child: SparkPlan,
+    offset: Int)
+  extends TakeOrderedAndProjectExecTransformerBase(limit, sortOrder, projectList, child, offset) {
 
   override protected def withNewChildInternal(newChild: SparkPlan): SparkPlan = {
     copy(child = newChild)
   }
 
   override protected def doValidateInternal(): ValidationResult = {
+    if (offset != 0) {
+      return ValidationResult.failed(s"Native TopK does not support offset: $offset")
+    }
     val context = new SubstraitContext
     val operatorId = context.nextOperatorId(this.nodeName)
     val relNode =
