@@ -911,6 +911,16 @@ class VeloxSparkPlanExecApi extends SparkPlanExecApi {
       sortOrder: Seq[SortOrder],
       projectList: Seq[NamedExpression],
       child: SparkPlan,
-      offset: Int): TakeOrderedAndProjectExecTransformerBase =
-    TopNTransformer(limit, sortOrder, projectList, child, offset)
+      offset: Int): TakeOrderedAndProjectExecTransformerBase = {
+    TopNTransformer(
+      limit,
+      sortOrder,
+      projectList,
+      LimitExecTransformer(
+        SortExecTransformer(sortOrder, false, child),
+        limit,
+        offset
+      ),
+      offset)
+  }
 }
