@@ -26,6 +26,7 @@ import org.apache.spark.sql.catalyst.expressions.{Attribute, NamedExpression, So
 import org.apache.spark.sql.execution.SparkPlan
 
 import io.substrait.proto.SortField
+import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, Distribution}
 
 import scala.collection.JavaConverters._
 
@@ -36,6 +37,8 @@ case class TopNTransformer(
     child: SparkPlan,
     offset: Int)
   extends TakeOrderedAndProjectExecTransformerBase(limit, sortOrder, projectList, child, offset) {
+
+  override def requiredChildDistribution: List[Distribution] = AllTuples :: Nil
 
   override protected def withNewChildInternal(newChild: SparkPlan): SparkPlan = {
     copy(child = newChild)

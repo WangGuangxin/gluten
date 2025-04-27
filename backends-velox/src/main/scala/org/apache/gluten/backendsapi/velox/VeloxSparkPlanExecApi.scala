@@ -918,8 +918,8 @@ class VeloxSparkPlanExecApi extends SparkPlanExecApi {
       projectList,
       LimitExecTransformer(
         SortExecTransformer(sortOrder, false, child),
-        limit,
-        offset
+        offset,
+        limit
       ),
       offset)
   }
