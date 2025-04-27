@@ -260,7 +260,12 @@ object OffloadOthers {
           val child = plan.child
           val (limit, offset) = SparkShimLoader.getSparkShims.getLimitAndOffsetFromTopK(plan)
           BackendsApiManager.getSparkPlanExecApiInstance
-            .genTakeOrderedAndProjectExecTransformer(limit, plan.sortOrder, plan.projectList, child, offset)
+            .genTakeOrderedAndProjectExecTransformer(
+              limit,
+              plan.sortOrder,
+              plan.projectList,
+              child,
+              offset)
         case plan: WindowExec =>
           WindowExecTransformer(
             plan.windowExpression,
