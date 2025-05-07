@@ -40,9 +40,14 @@ echo_build_properties() {
 
   if [ "$BACKEND_TYPE" = "velox" ]; then
       echo gcc_version=$(gcc --version | head -n 1)
-      echo velox_branch=$(git -C $BACKEND_HOME rev-parse --abbrev-ref HEAD)
-      echo velox_revision=$(git -C $BACKEND_HOME rev-parse HEAD)
-      echo velox_revision_time=$(git -C $BACKEND_HOME show -s --format=%ci HEAD)
+      SCRIPT_DIR=$(cd $(dirname -- $0); pwd -P)
+      if [ -f "$SCRIPT_DIR/velox-build-info.properties" ]; then
+          cat $SCRIPT_DIR/velox-build-info.properties
+      else
+          echo velox_branch=$(git -C $BACKEND_HOME rev-parse --abbrev-ref HEAD)
+          echo velox_revision=$(git -C $BACKEND_HOME rev-parse HEAD)
+          echo velox_revision_time=$(git -C $BACKEND_HOME show -s --format=%ci HEAD)
+      fi
   fi
   if [ "$BACKEND_TYPE" = "ch"  ]; then
       echo ch_org=$(cat $GLUTEN_ROOT/cpp-ch/clickhouse.version | grep -oP '(?<=^CH_ORG=).*')
@@ -52,3 +57,4 @@ echo_build_properties() {
 }
 
 echo_build_properties "$@" > "$BUILD_INFO"
+
