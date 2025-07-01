@@ -20,7 +20,7 @@
 
 #include "compute/ResultIterator.h"
 #include "config/GlutenConfig.h"
-#include "iceberg/IcebergPlanConverter.h"
+//#include "iceberg/IcebergPlanConverter.h"
 #include "operators/plannodes/RowVectorStream.h"
 #include "velox/common/file/FileSystems.h"
 
@@ -94,7 +94,7 @@ std::shared_ptr<SplitInfo> parseScanSplitInfo(
         splitInfo->format = dwio::common::FileFormat::TEXT;
         break;
       case SubstraitFileFormatCase::kIceberg:
-        splitInfo = IcebergPlanConverter::parseIcebergSplitInfo(file, std::move(splitInfo));
+        // splitInfo = IcebergPlanConverter::parseIcebergSplitInfo(file, std::move(splitInfo));
         break;
       default:
         splitInfo->format = dwio::common::FileFormat::UNKNOWN;

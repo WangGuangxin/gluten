@@ -61,9 +61,9 @@ set(VELOX_SRCS
     compute/VeloxRuntime.cc
     compute/WholeStageResultIterator.cc
     compute/VeloxPlanConverter.cc
-    compute/iceberg/IcebergPlanConverter.cc
+    # compute/iceberg/IcebergPlanConverter.cc
     jni/VeloxJniWrapper.cc
-    jni/JniFileSystem.cc
+    # jni/JniFileSystem.cc
     jni/JniUdf.cc
     memory/BufferOutputStream.cc
     memory/VeloxColumnarBatch.cc

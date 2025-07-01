@@ -23,17 +23,17 @@
 namespace gluten {
 
 struct BuildInfo {
-  static constexpr const char* version = "4381bfd55";
-  static constexpr const char* hash = "4381bfd558773b01f81f9ea1ffd2b6ef49dde358";
-  static constexpr const char* shortHash = "4381bfd55";
-  static constexpr const char* time = "2025-05-07 16:50:56";
-  static constexpr const char* host = "gluten-dev";
+  static constexpr const char* version = "b6e10049e";
+  static constexpr const char* hash = "b6e10049e6b98e8c7b3468be524705c82708e493";
+  static constexpr const char* shortHash = "b6e10049e";
+  static constexpr const char* time = "2025-07-01 22:06:24";
+  static constexpr const char* host = "spark-dev";
   static constexpr const char* systemName = "Ubuntu 20.04.5 LTS";
   static constexpr const char* processor = "32 core Intel(R) Xeon(R) Platinum 8260 CPU @ 2.40GHz";
   static constexpr const char* buildType = "Release";
   static constexpr const char* architecture = "x86_64";
   static constexpr bool isDirty = true;
-  static constexpr const char* modifiedFiles = "cpp/core/CMakeLists.txt, cpp/velox/CMakeLists.txt, cpp/velox/version/version.h";
+  static constexpr const char* modifiedFiles = "cpp/gluten.conan.graph.html, cpp/velox/CMakeLists.txt, cpp/velox/compute/VeloxPlanConverter.cc, cpp/velox/compute/WholeStageResultIterator.cc, cpp/velox/compute/WholeStageResultIterator.h, cpp/velox/memory/VeloxMemoryManager.cc, cpp/velox/version/version.h";
 
   static std::string toString(bool full = false) {
     std::string versionInfo = "========================================\n";
