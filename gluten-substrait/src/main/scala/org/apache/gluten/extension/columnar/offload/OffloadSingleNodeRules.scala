@@ -24,6 +24,7 @@ import org.apache.gluten.logging.LogLevelUtil
 import org.apache.gluten.sql.shims.SparkShimLoader
 
 import org.apache.spark.internal.Logging
+import org.apache.spark.sql.catalyst.expressions.SortOrder
 import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight, BuildSide}
 import org.apache.spark.sql.catalyst.plans.logical.Join
 import org.apache.spark.sql.execution._
@@ -183,6 +184,13 @@ case class OffloadOthers() extends OffloadSingleNode with LogLevelUtil {
 }
 
 object OffloadOthers {
+  private def outputOrderSatisfied(child: SparkPlan, required: Seq[Seq[SortOrder]]): Boolean = {
+    Seq(child).zip(required).forall {
+      case (child, requiredOrdering) =>
+        SortOrder.orderingSatisfies(child.outputOrdering, requiredOrdering)
+    }
+  }
+
   // Utility to replace single node within transformed Gluten node.
   // Children will be preserved as they are as children of the output node.
   //
@@ -252,11 +260,23 @@ object OffloadOthers {
             child,
             offset)
         case plan: WindowExec =>
-          WindowExecTransformer(
+          val transformer = WindowExecTransformer(
             plan.windowExpression,
             plan.partitionSpec,
             plan.orderSpec,
             plan.child)
+
+          val newChild = plan.child match {
+            case SortExec(_, false, child, _)
+                if outputOrderSatisfied(child, transformer.requiredChildOrdering) =>
+              child
+            case p @ ProjectExec(_, SortExec(_, false, child, _))
+                if outputOrderSatisfied(child, transformer.requiredChildOrdering) =>
+              p.withNewChildren(Seq(child))
+            case _ => plan.child
+          }
+          transformer.withNewChildren(Seq(newChild))
+
         case plan if SparkShimLoader.getSparkShims.isWindowGroupLimitExec(plan) =>
           val windowGroupLimitExecShim =
             SparkShimLoader.getSparkShims.getWindowGroupLimitExecShim(plan)

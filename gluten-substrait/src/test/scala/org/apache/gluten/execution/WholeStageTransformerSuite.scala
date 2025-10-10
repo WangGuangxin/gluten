@@ -199,4 +199,5 @@ abstract class WholeStageTransformerSuite
       compareResultStr(sqlNum, result, queriesResults)
     }
   }
+
 }

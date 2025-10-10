@@ -19,6 +19,8 @@ package org.apache.gluten.execution
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.Row
 
+import org.apache.hadoop.fs.{FileSystem, Path}
+
 abstract class IcebergSuite extends WholeStageTransformerSuite {
   protected val rootPath: String = getClass.getResource("/").getPath
   // FIXME: This folder doesn't exist in module gluten-iceberg so should be provided by
@@ -42,7 +44,52 @@ abstract class IcebergSuite extends WholeStageTransformerSuite {
       .set("spark.sql.catalog.spark_catalog.warehouse", s"file://$rootPath/tpch-data-iceberg-velox")
   }
 
-  test("iceberg transformer exists") {
+  private def isFileSystemOpenFileSupported: Boolean = {
+    classOf[FileSystem].getMethods.exists {
+      method =>
+        method.getName == "openFile" &&
+        method.getParameterCount == 1 &&
+        method.getParameterTypes.sameElements(Array(classOf[Path]))
+    }
+  }
+
+  private def icebergTest(testName: String)(testFun: => Any): Unit = {
+    if (isFileSystemOpenFileSupported) {
+      test(testName) {
+        testFun
+      }
+    } else {
+      ignore(testName) {}
+    }
+  }
+
+  private def icebergTestWithMinSparkVersion(testName: String, minVersion: String)(
+      testFun: => Any): Unit = {
+    if (matchSparkVersion(Some(minVersion))) {
+      if (isFileSystemOpenFileSupported) {
+        test(testName) {
+          testFun
+        }
+      } else {
+        ignore(testName) {}
+      }
+    }
+  }
+
+  private def icebergTestWithSpecifiedSparkVersion(testName: String, versions: String*)(
+      testFun: => Any): Unit = {
+    if (versions.exists(v => matchSparkVersion(Some(v), Some(v)))) {
+      if (isFileSystemOpenFileSupported) {
+        test(testName) {
+          testFun
+        }
+      } else {
+        ignore(testName) {}
+      }
+    }
+  }
+
+  icebergTest("iceberg transformer exists") {
     withTable("iceberg_tb") {
       spark.sql("""
                   |create table iceberg_tb using iceberg as
@@ -57,7 +104,7 @@ abstract class IcebergSuite extends WholeStageTransformerSuite {
     }
   }
 
-  test("iceberg input_file_name") {
+  icebergTest("iceberg input_file_name") {
     withTable("iceberg_input_file_tb") {
       spark.sql("""
                   |CREATE TABLE iceberg_input_file_tb (id INT, data STRING)
@@ -82,7 +129,7 @@ abstract class IcebergSuite extends WholeStageTransformerSuite {
     }
   }
 
-  testWithMinSparkVersion("iceberg bucketed join", "3.4") {
+  icebergTestWithMinSparkVersion("iceberg bucketed join", "3.4") {
     val leftTable = "p_str_tb"
     val rightTable = "p_int_tb"
     withTable(leftTable, rightTable) {
@@ -156,7 +203,7 @@ abstract class IcebergSuite extends WholeStageTransformerSuite {
     }
   }
 
-  testWithMinSparkVersion("iceberg bucketed join with partition", "3.4") {
+  icebergTestWithMinSparkVersion("iceberg bucketed join with partition", "3.4") {
     val leftTable = "p_str_tb"
     val rightTable = "p_int_tb"
     withTable(leftTable, rightTable) {
@@ -230,7 +277,7 @@ abstract class IcebergSuite extends WholeStageTransformerSuite {
     }
   }
 
-  testWithMinSparkVersion("iceberg bucketed join partition value not exists", "3.4") {
+  icebergTestWithMinSparkVersion("iceberg bucketed join partition value not exists", "3.4") {
     val leftTable = "p_str_tb"
     val rightTable = "p_int_tb"
     withTable(leftTable, rightTable) {
@@ -305,7 +352,7 @@ abstract class IcebergSuite extends WholeStageTransformerSuite {
     }
   }
 
-  testWithMinSparkVersion(
+  icebergTestWithMinSparkVersion(
     "iceberg bucketed join partition value not exists partial cluster",
     "3.4") {
     val leftTable = "p_str_tb"
@@ -382,7 +429,7 @@ abstract class IcebergSuite extends WholeStageTransformerSuite {
     }
   }
 
-  testWithMinSparkVersion("iceberg bucketed join with partition filter", "3.4") {
+  icebergTestWithMinSparkVersion("iceberg bucketed join with partition filter", "3.4") {
     val leftTable = "p_str_tb"
     val rightTable = "p_int_tb"
     withTable(leftTable, rightTable) {
@@ -458,7 +505,7 @@ abstract class IcebergSuite extends WholeStageTransformerSuite {
     }
   }
 
-  test("iceberg: time travel") {
+  icebergTest("iceberg: time travel") {
     withTable("iceberg_tm") {
       spark.sql(s"""
                    |create table iceberg_tm (id int, name string) using iceberg
@@ -480,7 +527,7 @@ abstract class IcebergSuite extends WholeStageTransformerSuite {
     }
   }
 
-  test("iceberg: partition filters") {
+  icebergTest("iceberg: partition filters") {
     withTable("iceberg_pf") {
       spark.sql(s"""
                    |create table iceberg_pf (id int, name string)
@@ -495,7 +542,7 @@ abstract class IcebergSuite extends WholeStageTransformerSuite {
     }
   }
 
-  test("iceberg read mor table - delete and update") {
+  icebergTest("iceberg read mor table - delete and update") {
     withTable("iceberg_mor_tb") {
       spark.sql("""
                   |create table iceberg_mor_tb (
@@ -546,7 +593,7 @@ abstract class IcebergSuite extends WholeStageTransformerSuite {
     }
   }
 
-  test("iceberg read mor table - merge into") {
+  icebergTest("iceberg read mor table - merge into") {
     withTable("iceberg_mor_tb", "merge_into_source_tb") {
       spark.sql("""
                   |create table iceberg_mor_tb (
@@ -616,7 +663,7 @@ abstract class IcebergSuite extends WholeStageTransformerSuite {
 
   // Spark configuration spark.sql.iceberg.handle-timestamp-without-timezone is not supported
   // in Spark 3.4
-  testWithSpecifiedSparkVersion("iceberg partition type - timestamp", "3.3", "3.5") {
+  icebergTestWithSpecifiedSparkVersion("iceberg partition type - timestamp", "3.3", "3.5") {
     Seq("true", "false").foreach {
       flag =>
         withSQLConf(
@@ -645,7 +692,7 @@ abstract class IcebergSuite extends WholeStageTransformerSuite {
     }
   }
 
-  test("test read v1 iceberg with partition drop") {
+  icebergTest("test read v1 iceberg with partition drop") {
     val testTable = "test_table_with_partition"
     withTable(testTable) {
       spark.sql(s"""
@@ -671,7 +718,7 @@ abstract class IcebergSuite extends WholeStageTransformerSuite {
     }
   }
 
-  test("test read iceberg with special characters in column name") {
+  icebergTest("test read iceberg with special characters in column name") {
     val testTable = "test_table_with_special_characters"
     withTable(testTable) {
       spark.sql(s"""
@@ -690,7 +737,7 @@ abstract class IcebergSuite extends WholeStageTransformerSuite {
     }
   }
 
-  test("assert_not_null with iceberg table") {
+  icebergTest("assert_not_null with iceberg table") {
     withTable("iceberg_not_null") {
       spark.sql("""
                   |CREATE TABLE iceberg_not_null (id BIGINT NOT NULL, name STRING NOT NULL)

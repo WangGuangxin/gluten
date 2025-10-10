@@ -379,7 +379,9 @@ case class WholeStageTransformer(child: SparkPlan, materializeInput: Boolean = f
         wsCtx.substraitContext.registeredJoinParams,
         wsCtx.substraitContext.registeredAggregationParams
       ),
-      wsCtx.enableCudf
+      wsCtx.enableCudf,
+      wsCtx,
+      inputPartitions.length
     )
 
     val allInputPartitions = leafTransformers.map(_.getPartitions)
@@ -434,7 +436,8 @@ case class WholeStageTransformer(child: SparkPlan, materializeInput: Boolean = f
           wsCtx.substraitContext.registeredJoinParams,
           wsCtx.substraitContext.registeredAggregationParams
         ),
-        materializeInput
+        materializeInput,
+        inputRDDs.getPartitionLength
       )
     }
   }

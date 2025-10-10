@@ -88,3 +88,9 @@ metastore_db/
 
 # Claude Code local config
 .claude/
+cpp/gluten.conan.graph.html
+**/version/version.h
+.bolt-build-info.properties
+cpp/gluten.conan.graph.html
+
+output/**
