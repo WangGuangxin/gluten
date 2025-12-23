@@ -174,8 +174,7 @@ BoltMemoryManager* BoltRuntime::memoryManager() {
 
 std::shared_ptr<ResultIterator> BoltRuntime::createResultIterator(
     const std::string& spillDir,
-    const std::vector<std::shared_ptr<ResultIterator>>& inputs,
-    const std::unordered_map<std::string, std::string>& sessionConf) {
+    const std::vector<std::shared_ptr<ResultIterator>>& inputs) {
   LOG_IF(INFO, debugModeEnabled_) << "BoltRuntime session config:" << printConfig(confMap_);
 
   BoltPlanConverter boltPlanConverter(
@@ -204,7 +203,7 @@ std::shared_ptr<ResultIterator> BoltRuntime::createResultIterator(
       scanInfos,
       streamIds,
       spillDir,
-      sessionConf,
+      boltCfg_,
       taskInfo_.has_value() ? taskInfo_.value() : SparkTaskInfo{});
   auto ans = std::make_shared<ResultIterator>(std::move(wholeStageIter), this);
   if (gluten::BoltGlutenMemoryManager::enabled()) {

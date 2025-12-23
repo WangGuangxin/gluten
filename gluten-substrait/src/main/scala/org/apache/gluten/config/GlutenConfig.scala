@@ -1710,7 +1710,6 @@ object GlutenConfig extends ConfigRegistry {
       .booleanConf
       .createWithDefault(true)
 
-<<<<<<< HEAD
   val SMALL_FILE_THRESHOLD =
     buildConf("spark.gluten.sql.columnar.smallFileThreshold")
       .doc(
@@ -1720,7 +1719,7 @@ object GlutenConfig extends ConfigRegistry {
           "total size of small files is below this threshold.")
       .doubleConf
       .createWithDefault(0.5)
-=======
+
   val GLUTEN_PARALLEL_ENABLED =
     buildConf(GLUTEN_PARALLEL_ENABLED_KEY)
       .internal()
@@ -1742,5 +1741,4 @@ object GlutenConfig extends ConfigRegistry {
       .internal()
       .booleanConf
       .createWithDefault(true)
->>>>>>> be4494fb3 (add bolt backend in gluten)
 }

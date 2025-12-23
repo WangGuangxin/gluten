@@ -505,6 +505,7 @@ Java_org_apache_gluten_vectorized_PlanEvaluatorJniWrapper_nativeCreateKernelWith
   }
 
   // Check if "multi-thread Spark" is enabled.
+  auto conf = ctx->getConfMap();
   bool parallelEnabled = isParallelExecEnabled(conf);
   LOG(INFO) << "nativeCreateKernelWithIterator parallelEnabled=" << parallelEnabled;
 

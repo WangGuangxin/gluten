@@ -27,10 +27,7 @@ import org.apache.gluten.substrait.rel.LocalFilesNode.ReadFileFormat
 
 import org.apache.spark.Partition
 import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.connector.read.InputPartition
 import org.apache.spark.sql.execution.adaptive.InputStats
-import org.apache.spark.sql.hive.HiveTableScanExecTransformer
-import org.apache.spark.sql.types.{StringType, StructField, StructType}
 
 import com.google.protobuf.StringValue
 import io.substrait.proto.NamedStruct

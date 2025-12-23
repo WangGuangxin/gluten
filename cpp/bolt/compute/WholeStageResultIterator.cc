@@ -103,12 +103,11 @@ WholeStageResultIterator::WholeStageResultIterator(
     const std::vector<std::shared_ptr<SplitInfo>>& scanInfos,
     const std::vector<bytedance::bolt::core::PlanNodeId>& streamIds,
     const std::string spillDir,
-    const std::unordered_map<std::string, std::string>& confMap,
+    const std::shared_ptr<bytedance::bolt::config::ConfigBase>& boltCfg,
     const SparkTaskInfo& taskInfo)
     : memoryManager_(memoryManager),
       spillDir_(spillDir),
-      boltCfg_(
-          std::make_shared<bytedance::bolt::config::ConfigBase>(std::unordered_map<std::string, std::string>(confMap))),
+      boltCfg_(boltCfg),
       taskInfo_(taskInfo),
       boltPlan_(planNode),
 #ifdef GLUTEN_ENABLE_GPU

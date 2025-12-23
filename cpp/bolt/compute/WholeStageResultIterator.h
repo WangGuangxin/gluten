@@ -41,7 +41,7 @@ class WholeStageResultIterator : public ColumnarBatchIterator {
       const std::vector<std::shared_ptr<SplitInfo>>& scanInfos,
       const std::vector<bytedance::bolt::core::PlanNodeId>& streamIds,
       const std::string spillDir,
-      const std::unordered_map<std::string, std::string>& confMap,
+      const std::shared_ptr<bytedance::bolt::config::ConfigBase>& boltCfg,
       const SparkTaskInfo& taskInfo);
 
   virtual ~WholeStageResultIterator() {
@@ -123,7 +123,7 @@ class WholeStageResultIterator : public ColumnarBatchIterator {
 
   std::string spillDir_;
   /// Config, task and plan.
-  std::shared_ptr<config::ConfigBase> boltCfg_;
+  const std::shared_ptr<bytedance::bolt::config::ConfigBase> boltCfg_;
   const SparkTaskInfo taskInfo_;
   std::shared_ptr<bytedance::bolt::exec::Task> task_;
   std::shared_ptr<const bytedance::bolt::core::PlanNode> boltPlan_;

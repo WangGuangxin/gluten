@@ -32,13 +32,18 @@ class BoltColumnarBatchSerializer final : public ColumnarBatchSerializer {
       std::shared_ptr<bytedance::bolt::memory::MemoryPool> boltPool,
       struct ArrowSchema* cSchema);
 
-  std::shared_ptr<arrow::Buffer> serializeColumnarBatches(
-      const std::vector<std::shared_ptr<ColumnarBatch>>& batches) override;
+  void append(const std::shared_ptr<ColumnarBatch>& batch) override;
+
+  int64_t maxSerializedSize() override;
+
+  void serializeTo(uint8_t* address, int64_t size) override;
 
   std::shared_ptr<ColumnarBatch> deserialize(uint8_t* data, int32_t size) override;
 
  private:
   std::shared_ptr<bytedance::bolt::memory::MemoryPool> boltPool_;
+  std::unique_ptr<bytedance::bolt::StreamArena> arena_;
+  std::unique_ptr<bytedance::bolt::VectorSerializer> serializer_;
   bytedance::bolt::RowTypePtr rowType_;
   std::unique_ptr<bytedance::bolt::serializer::presto::PrestoVectorSerde> serde_;
   bytedance::bolt::serializer::presto::PrestoVectorSerde::PrestoOptions options_;
