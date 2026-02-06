@@ -782,8 +782,10 @@ std::unordered_map<std::string, std::string> WholeStageResultIterator::getQueryC
           std::to_string(boltCfg_->get<uint64_t>(kAdaptiveSkippedDataSizeThreshold, 20UL << 30));
       configs[bolt::core::QueryConfig::kMaxHashTableSize] =
           std::to_string(boltCfg_->get<int32_t>(kMaxHashTableSize, 50L << 20));
+      // Default hashAggregationCompositeOutputEnabled to false because CompositeVector is 
+      // not compatible with shuffle batch resize on the latest OSS Gluten    
       configs[bolt::core::QueryConfig::kHashAggregationCompositeOutputEnabled] =
-          std::to_string(boltCfg_->get<bool>(kHashAggregationCompositeOutputEnabled, true));
+          std::to_string(boltCfg_->get<bool>(kHashAggregationCompositeOutputEnabled, false));
       configs[bolt::core::QueryConfig::kHashAggregationUniqueRowOpt] =
           std::to_string(boltCfg_->get<bool>(kHashAggregationUniqueRowOpt, true));
       configs[bolt::core::QueryConfig::kHashAggregationCompositeOutputAccumulatorRatio] =
