@@ -111,3 +111,35 @@
 - DTO 类 `Metrics` 和 `OperatorMetrics` 在 `backends-common` 中提供唯一定义，避免多处实现。
 
 LSP 层面未发现明显的编译错误或符号引用问题。
+
+## Round 3 Build Report (ColumnarBatches)
+
+### `mvn spotless:apply`
+
+- **结果**: **成功**
+- **详情**:
+  - `mvn spotless:apply` 命令在所有模块上成功执行。
+  - 新增的 `BackendColumnarBatchesBase.java`, `ColumnarBatchSerializerInstance.scala`，以及修改后的 `VeloxColumnarBatches.java`, `BoltColumnarBatches.java`, `backends-common/pom.xml` 均通过了格式化。
+  - 特别是，对 `ColumnarBatchSerializerInstance.scala` 仅保留 package 和注释，使其不再包含类定义，`spotless` 也能正常处理其 license header，避免了上一轮遇到的 `Unable to find delimiter regex ^package` 问题。
+
+### 增量编译尝试
+
+- **`mvn -q -DskipTests package -pl backends-common -am`**:
+  - **结果**: **失败**
+  - **原因**: 与上一轮相同，在项目根目录执行时，依然报 `Could not find the selected project in the reactor: backends-common`。
+- **`cd gluten/backends-common && mvn -q -DskipTests package`**:
+  - **结果**: **失败**
+  - **原因**: 同样是依赖解析失败，无法从远程仓库找到 `gluten-substrait:1.6.0-SNAPSHOT`, `gluten-core:1.6.0-SNAPSHOT`, `gluten-arrow:1.6.0-SNAPSHOT`。这依然是本地环境问题，非代码问题。
+
+**结论**: 构建状态与上一轮一致。代码格式化通过，LSP 静态检查无误，但增量编译因本地环境缺少已安装的 Gluten SNAPSHOT 依赖而失败。
+
+### LSP 诊断
+
+- **符号解析与继承关系**:
+  - `VeloxColumnarBatches` 和 `BoltColumnarBatches` 对 `BackendColumnarBatchesBase` 的继承关系正确。
+  - 后端实现类对抽象方法的 `override` 均符合 Java 语法。
+  - 各后端对 `*JniWrapper` 的调用未变，仅从各自的实现类移至 `BackendColumnarBatchesBase` 的子类中。
+- **依赖关系**:
+  - `backends-common` 新增了对 `gluten-arrow` 的依赖，这与 `BackendColumnarBatchesBase.java` 中使用的 `ColumnarBatches`, `ArrowBufferAllocators` 等类相符。
+  - 引用 `VeloxColumnarBatches` 的其他类（如 `ColumnarCollectLimitExec`）无需修改，因为其静态 API 保持不变。
+- **结论**: 静态分析显示本次抽取结构合理，依赖完整，未引入新的编译期问题。

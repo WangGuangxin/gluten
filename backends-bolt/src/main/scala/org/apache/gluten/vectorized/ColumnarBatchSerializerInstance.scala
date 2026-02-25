@@ -16,32 +16,7 @@
  */
 package org.apache.gluten.vectorized
 
-import org.apache.spark.serializer.{DeserializationStream, SerializationStream, SerializerInstance}
-import org.apache.spark.storage.BlockId
-
-import java.io.{InputStream, OutputStream}
-import java.nio.ByteBuffer
-
-import scala.reflect.ClassTag
-
-abstract class ColumnarBatchSerializerInstance extends SerializerInstance {
-
-  /** Deserialize the streams of ColumnarBatches. */
-  def deserializeStreams(streams: Iterator[(BlockId, InputStream)]): DeserializationStream
-
-  override def serialize[T: ClassTag](t: T): ByteBuffer = {
-    throw new UnsupportedOperationException
-  }
-
-  override def deserialize[T: ClassTag](bytes: ByteBuffer): T = {
-    throw new UnsupportedOperationException
-  }
-
-  override def deserialize[T: ClassTag](bytes: ByteBuffer, loader: ClassLoader): T = {
-    throw new UnsupportedOperationException
-  }
-
-  override def serializeStream(s: OutputStream): SerializationStream = {
-    throw new UnsupportedOperationException
-  }
-}
+/*
+ * This file has been migrated to backends-common as a shared implementation:
+ * org.apache.gluten.vectorized.ColumnarBatchSerializerInstance
+ */

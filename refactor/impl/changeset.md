@@ -153,3 +153,62 @@
 - `gluten/backends-velox/src/main/scala/org/apache/gluten/metrics/BatchScanMetricsUpdater.scala` 及其他 14 个 updater 的 velox 版本
 - `gluten/backends-bolt/src/main/scala/org/apache/gluten/metrics/BatchScanMetricsUpdater.scala` 及其他 14 个 updater 的 bolt 版本
   - **理由**: 以上文件均已迁移至 `backends-common` 模块，删除原位置的重复实现，避免类冲突。
+
+### Round 3: ColumnarBatches 与 ColumnarBatch 序列化相关抽取
+
+#### 新增文件
+
+- `gluten/backends-common/src/main/java/org/apache/gluten/columnarbatch/BackendColumnarBatchesBase.java`
+  - **说明**: 新增后端无关的抽象基类，承载 `VeloxColumnarBatches` / `BoltColumnarBatches` 之间完全相同的 Java 逻辑（batch 类型校验、to-backend 转换、ensure-backend、compose/slice/repeatedThenCompose 等），但不直接绑定具体 JNI wrapper。
+  - 基类通过抽象方法暴露后端差异点：
+    - `comprehensiveType()`：返回综合类型字符串（`"velox"` 或 `"bolt"`）。
+    - `toBatchActionName()` / `composeActionName()` / `sliceActionName()` / `repeatedThenComposeActionName()`：用于构造 `Runtimes.contextInstance` 的动作标识字符串，保持与原实现一致的日志/调试标签。
+    - `fromNative(...)` / `composeNative(...)` / `sliceNative(...)` / `repeatedThenComposeNative(...)`：由具体后端用各自的 `*ColumnarBatchJniWrapper` 实现。
+
+- `gluten/backends-common/src/main/scala/org/apache/gluten/vectorized/ColumnarBatchSerializerInstance.scala`
+  - **说明**: 将原本在 Velox/Bolt 两个模块中完全一致的 `ColumnarBatchSerializerInstance` 抽取到 `backends-common`，作为所有后端共用的抽象基类，只定义 `deserializeStreams` 抽象方法和一组抛出 `UnsupportedOperationException` 的默认实现。
+
+- `gluten/backends-common/pom.xml`
+  - **补充依赖**: 新增 `gluten-arrow` 依赖，以支撑 `BackendColumnarBatchesBase` 中对 `ColumnarBatches`、`ArrowBufferAllocators`、`IndicatorVector` 等通用 Arrow/Columnar 工具类的引用：
+    - `org.apache.gluten:gluten-arrow:${project.version}`，scope 为 `compile`。
+
+#### 修改文件
+
+- `gluten/backends-velox/src/main/java/org/apache/gluten/columnarbatch/VeloxColumnarBatches.java`
+  - **变更**:
+    - 类签名改为继承 `BackendColumnarBatchesBase`，并实现抽象方法：
+      - `comprehensiveType()` 返回 `COMPREHENSIVE_TYPE_VELOX`（`"velox"`）。
+      - `toBatchActionName()` / `composeActionName()` / `sliceActionName()` / `repeatedThenComposeActionName()` 分别返回原来的字符串（如 `"VeloxColumnarBatches#toVeloxBatch"`）。
+      - JNI 相关方法改为调用 `VeloxColumnarBatchJniWrapper.create(runtime).from/compose/slice/repeatedThenCompose(...)`。
+    - 所有对外静态方法保持原名和签名不变：
+      - `checkVeloxBatch` / `toVeloxBatch` / `ensureVeloxBatch` / `compose` / `slice` / `repeatedThenCompose`，内部改为委托给单例 `INSTANCE` 上的基类方法（如 `toBackendBatch`、`sliceBatch` 等）。
+    - 通过基类复用所有引用计数、`ColumnarBatches.ensureOffloaded`、`SparkColumnarBatchUtil.transferVectors` 等逻辑，消除与 Bolt 版本的重复实现。
+
+- `gluten/backends-bolt/src/main/java/org/apache/gluten/columnarbatch/BoltColumnarBatches.java`
+  - **变更** 与 Velox 版本对称：
+    - 继承 `BackendColumnarBatchesBase`，实现：
+      - `comprehensiveType()` 返回 `COMPREHENSIVE_TYPE_BOLT`（`"bolt"`）。
+      - actionName 系列方法返回 `"BoltColumnarBatches#..."`。
+      - JNI 入口改为调用 `BoltColumnarBatchJniWrapper.create(runtime).from/compose/slice/repeatedThenCompose(...)`。
+    - 保留原有静态 API：`checkBoltBatch` / `toBoltBatch` / `ensureBoltBatch` / `compose` / `slice` / `repeatedThenCompose`，内部统一委托给基类实现。
+  - **效果**: 两个后端现在仅在类型字符串和 JNI wrapper 上存在真实差异，其余 Java 逻辑统一由 `BackendColumnarBatchesBase` 提供，符合“仅命名/注释差异抽取公共实现”的目标。
+
+- `gluten/backends-velox/src/main/scala/org/apache/gluten/vectorized/ColumnarBatchSerializerInstance.scala`
+- `gluten/backends-bolt/src/main/scala/org/apache/gluten/vectorized/ColumnarBatchSerializerInstance.scala`
+  - **变更**:
+    - 文件内容改为仅保留 license 头和 `package org.apache.gluten.vectorized` 以及注释，**不再定义类**。
+    - 所有实际实现由 `backends-common` 中的 `ColumnarBatchSerializerInstance` 提供。
+  - **理由**: 
+    - 避免多个模块中同时定义同名抽象类导致编译时 FQN 冲突。
+    - 通过保留 `package` 语句使 `spotless` 的 license header step 能正常运行。
+
+#### 删除文件
+
+- 本轮未物理删除 Java/Scala 文件，但逻辑上：
+  - `VeloxColumnarBatches` / `BoltColumnarBatches` 内部原有的完整实现已被迁移到 `BackendColumnarBatchesBase`，当前文件只保留后端差异注入与静态 API 壳层。
+  - Velox/Bolt 各自的 `ColumnarBatchSerializerInstance.scala` 不再承载类定义，类定义统一由 `backends-common` 提供，可视为“实现层已删除、仅保留占位”。
+
+#### 小结
+
+- 针对用户指出的 `VeloxColumnarBatches` 与 `BoltColumnarBatches`，在不触及 JNI/C++ 实现和 batch 类型字符串（`"velox"` / `"bolt"`）的前提下，将其公共 Java 逻辑抽取到了 `backends-common` 的基类中，实现了真正意义上的代码复用；
+- 同时抽取了 `ColumnarBatchSerializerInstance` 到 `backends-common`，统一了列批序列化实例的抽象层，为后续在 shuffle/序列化链路上进一步收敛 Velox/Bolt 差异打下基础。

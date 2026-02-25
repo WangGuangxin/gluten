@@ -29,9 +29,7 @@ import java.util.{ArrayList => JArrayList, List => JList, Map => JMap}
 
 object MetricsUtil extends Logging {
 
-  /**
-   * Generate the function which updates metrics fetched from certain iterator to transformers.
-   */
+  /** Generate the function which updates metrics fetched from certain iterator to transformers. */
   def genMetricsUpdatingFunction(
       child: SparkPlan,
       relMap: JMap[JLong, JList[JLong]],
@@ -59,7 +57,8 @@ object MetricsUtil extends Logging {
     }
 
     val accumulator = new TaskStatsAccumulator()
-    child.session.sparkContext.register(accumulator, s"${BackendsApiManager.getBackendName} task stats")
+    child.session.sparkContext
+      .register(accumulator, s"${BackendsApiManager.getBackendName} task stats")
 
     val mut: MetricsUpdaterTree = treeifyMetricsUpdaters(child)
 
@@ -203,7 +202,8 @@ object MetricsUtil extends Logging {
   /**
    * Update the metrics of transformers.
    *
-   * @return operator index and metrics index
+   * @return
+   *   operator index and metrics index
    */
   def updateTransformerMetricsInternal(
       mutNode: MetricsUpdaterTree,
@@ -290,9 +290,7 @@ object MetricsUtil extends Logging {
     (newOperatorIdx, newMetricsIdx)
   }
 
-  /**
-   * Get a function which would update the metrics of transformers.
-   */
+  /** Get a function which would update the metrics of transformers. */
   def genMetricsUpdatingFunction(
       mutNode: MetricsUpdaterTree,
       relMap: JMap[JLong, JList[JLong]],
