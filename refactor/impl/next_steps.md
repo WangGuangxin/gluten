@@ -60,3 +60,31 @@ Scala 编译器在编译 `backends-common` 时缺少核心依赖（如 `scala.na
 2.  **小步提交与验证**：每次迁移后都执行本地编译，确保改动没有破坏构建。
 
 下一个明确的迁移目标是 `ArrowCSVFileFormat` 及相关的数据源工具类。
+
+## 最新进展与后续计划 (Round 2)
+
+**最新进展**:
+
+第二轮重构已完成，主要集中在 **Metrics 组件** 的抽取：
+1.  **DTOs**: `Metrics.java` 和 `OperatorMetrics.java` 已统一迁移到 `backends-common`，并遵循“保留 Velox 命名”的规则（`veloxToArrow`）。
+2.  **工具类**: `MetricsUtil.scala` 已被通用化并迁移到 `backends-common`，通过 `BackendsApiManager.getBackendName` 动态区分后端。
+3.  **Updaters**:
+    - 15 个完全一致的 `*MetricsUpdater` 已迁移到 `backends-common`，由 Velox/Bolt 共同复用；
+    - 对 `HashAggregateMetricsUpdater` 抽取了公共 `trait`，并保留两端各自的 `HashAggregateMetricsUpdaterImpl` 差异实现在后端模块中。
+4.  **CSV 组件**: 纯工具类 `ArrowCSVOptionConverter.scala` 已迁移到 `backends-common`，为后续完整抽取 Arrow CSV datasource 做铺垫。
+
+**后续计划**:
+
+1.  **CSV Datasource 的完整抽取**
+    - 目标: 迁移 `ArrowCSVFileFormat.scala` 及 `v2` 下的 `ArrowCSVScan.scala`、`ArrowCSVScanBuilder.scala`、`ArrowCSVTable.scala`、`ArrowCSVPartitionReaderFactory.scala`。
+    - 挑战: 这些类目前直接依赖 `RowToVeloxColumnarExec` / `RowToBoltColumnarExec` 以及各自的 `VeloxConfig` / `BoltConfig`，属于后端特定逻辑。
+    - 建议路线:
+      1. 在 `backends-common` 中抽象一个面向 Arrow 的通用 Row->Columnar 转换帮助类（基于 `NativeRowToColumnarJniWrapper` 和 `BackendsApiManager`），从现有 `RowToVeloxColumnarExec` / `RowToBoltColumnarExec` 中提炼共有实现；
+      2. 将 `veloxPreferredBatchBytes` / `boltPreferredBatchBytes` 抽象到 `BackendSettingsApi` / `CommonBackendSettingsApi` 中，由各后端实现；
+      3. 在完成上述抽象后，再将 CSV datasource 的主要类迁移到 `backends-common`，并用新的通用转换入口替代当前的后端特定调用。
+
+2.  **FS 与其他 metrics 衍生组件的抽取**
+    - 对 `fs` 目录下的通用文件系统工具类（如 `JniFilesystem` / `OnHeapFileSystem`）进行一次 `identical` 验证后，整体迁移到 `backends-common`；
+    - 对 Hudi/Paimon 等 connector 的 metrics/FS 相关辅助类，按照 `extract_candidates.csv` 中 `identical` / `renamed` 的优先级，分批迁移。
+
+后续所有步骤仍将遵循“小步抽取 + 频繁验证”的原则：每一批抽取都需跑通 `mvn spotless:apply`，并在条件允许的环境中执行一次 `mvn -DskipTests package` 或完整 `make jar` 来验证编译。

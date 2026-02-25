@@ -16,6 +16,7 @@
  */
 package org.apache.gluten.metrics
 
+import org.apache.gluten.backendsapi.BackendsApiManager
 import org.apache.gluten.execution._
 import org.apache.gluten.substrait.{AggregationParams, JoinParams}
 
@@ -30,15 +31,6 @@ object MetricsUtil extends Logging {
 
   /**
    * Generate the function which updates metrics fetched from certain iterator to transformers.
-   *
-   * @param child
-   *   the child spark plan
-   * @param relMap
-   *   the map between operator index and its rels
-   * @param joinParamsMap
-   *   the map between operator index and join parameters
-   * @param aggParamsMap
-   *   the map between operator index and aggregation parameters
    */
   def genMetricsUpdatingFunction(
       child: SparkPlan,
@@ -67,7 +59,7 @@ object MetricsUtil extends Logging {
     }
 
     val accumulator = new TaskStatsAccumulator()
-    child.session.sparkContext.register(accumulator, "velox task stats")
+    child.session.sparkContext.register(accumulator, s"${BackendsApiManager.getBackendName} task stats")
 
     val mut: MetricsUpdaterTree = treeifyMetricsUpdaters(child)
 
@@ -80,14 +72,7 @@ object MetricsUtil extends Logging {
       accumulator)
   }
 
-  /**
-   * Merge several suites of metrics together.
-   *
-   * @param operatorMetrics
-   *   : a list of metrics to merge
-   * @return
-   *   the merged metrics
-   */
+  /** Merge several suites of metrics together. */
   private def mergeMetrics(operatorMetrics: JList[OperatorMetrics]): OperatorMetrics = {
     if (operatorMetrics.size() == 0) {
       return null
@@ -215,11 +200,10 @@ object MetricsUtil extends Logging {
     )
   }
 
-  // FIXME: Metrics updating code is too magical to maintain. Tree-walking algorithm should be made
-  //  more declarative than by counting down these counters that don't have fixed definition.
   /**
-   * @return
-   *   operator index and metrics index
+   * Update the metrics of transformers.
+   *
+   * @return operator index and metrics index
    */
   def updateTransformerMetricsInternal(
       mutNode: MetricsUpdaterTree,
@@ -308,22 +292,6 @@ object MetricsUtil extends Logging {
 
   /**
    * Get a function which would update the metrics of transformers.
-   *
-   * @param mutNode
-   *   the metrics updater tree built from the original plan
-   * @param relMap
-   *   the map between operator index and its rels
-   * @param operatorIdx
-   *   the index of operator
-   * @param metricsIdx
-   *   the index of metrics
-   * @param joinParamsMap
-   *   the map between operator index and join parameters
-   * @param aggParamsMap
-   *   the map between operator index and aggregation parameters
-   *
-   * @return
-   *   A recursive function updating the metrics of operator(transformer) and its children.
    */
   def genMetricsUpdatingFunction(
       mutNode: MetricsUpdaterTree,

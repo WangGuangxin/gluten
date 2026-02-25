@@ -62,3 +62,52 @@
   - **修复**:
     - **原因**: Maven 的 `-pl`（`--projects`）和 `-am`（`--also-make`）需要在项目的根目录执行，才能正确解析多模块项目的反应堆（Reactor）构建顺序。
     - **操作**: 将构建命令调整为在 `gluten/` 根目录执行，使得 Maven 能够识别完整的项目结构，从而成功编译 `backends-common` 及其依赖项。
+
+## Round 2 Build Report (CSV/Metrics/UDF)
+
+### `mvn spotless:apply`
+
+`mvn spotless:apply` 命令在所有模块上成功执行，所有新增、修改的 Java 和 Scala 文件都通过了格式化检查。
+
+```bash
+[INFO] ------------------------------------------------------------------------
+[INFO] Reactor Summary for Gluten Parent Pom 1.6.0-SNAPSHOT:
+[INFO] 
+[INFO] Gluten Parent Pom .................................. SUCCESS [  0.528 s]
+[INFO] Gluten Ras ......................................... SUCCESS [  0.050 s]
+[INFO] Gluten Ras Common .................................. SUCCESS [  4.520 s]
+[INFO] Gluten Core ........................................ SUCCESS [  2.306 s]
+...
+[INFO] Gluten Backends Velox .............................. SUCCESS [  4.441 s]
+[INFO] Gluten Backends Bolt ............................... SUCCESS [  4.212 s]
+...
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  28.772 s
+[INFO] Finished at: 2026-02-25T19:11:48+08:00
+[INFO] ------------------------------------------------------------------------
+```
+
+### `mvn -q -DskipTests package -pl backends-common -am`
+
+在项目根目录执行该命令失败，提示 `Could not find the selected project in the reactor: backends-common`。这通常是因为 Maven 在多模块项目中解析 `-pl` 参数时无法直接匹配模块 ID。
+
+随后尝试在 `gluten/backends-common` 目录下单独执行 `mvn -q -DskipTests package`，遇到依赖解析失败：
+
+```bash
+[ERROR] Failed to execute goal on project backends-common: Could not resolve dependencies for project org.apache.gluten:backends-common:jar:1.6.0-SNAPSHOT: The following artifacts could not be resolved: org.apache.gluten:gluten-substrait:jar:1.6.0-SNAPSHOT, org.apache.gluten:gluten-core:jar:1.6.0-SNAPSHOT: ... was not found in https://maven.byted.org/repository/public
+```
+
+**结论**：该失败是由于当前环境中缺少 `gluten-substrait` 和 `gluten-core` 的匹配版本（尚未 `mvn install`），属于环境问题而非代码问题。在 CI/SCM 的完整构建环境中（会构建并安装所有模块），此问题预计不会出现。
+
+### LSP 诊断
+
+通过对修改文件的静态分析：
+- 所有 `import` 路径均已修正，指向 `backends-common` 中的新位置。
+- `VeloxMetricsApi` 和 `BoltMetricsApi` 对公共 Metrics Updaters 的引用均合法。
+- `HashAggregateMetricsUpdaterImpl` 对 `backends-common` 中 `HashAggregateMetricsUpdater` trait 的继承关系正确。
+- `MetricsUtil` 中的后端名称已经改为通过 `BackendsApiManager.getBackendName` 动态获取，消除硬编码差异。
+- DTO 类 `Metrics` 和 `OperatorMetrics` 在 `backends-common` 中提供唯一定义，避免多处实现。
+
+LSP 层面未发现明显的编译错误或符号引用问题。

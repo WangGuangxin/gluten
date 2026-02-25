@@ -24,14 +24,7 @@ import org.apache.spark.task.TaskResources
 
 import scala.collection.JavaConverters._
 
-trait HashAggregateMetricsUpdater extends MetricsUpdater {
-  def updateAggregationMetrics(
-      aggregationMetrics: java.util.ArrayList[OperatorMetrics],
-      aggParams: AggregationParams): Unit
-}
-
-class HashAggregateMetricsUpdaterImpl(val metrics: Map[String, SQLMetric])
-  extends HashAggregateMetricsUpdater {
+trait HashAggregateMetricsUpdaterImpl extends HashAggregateMetricsUpdater {
   val aggOutputRows: SQLMetric = metrics("aggOutputRows")
   val aggOutputVectors: SQLMetric = metrics("aggOutputVectors")
   val aggOutputBytes: SQLMetric = metrics("aggOutputBytes")

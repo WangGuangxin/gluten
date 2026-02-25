@@ -18,7 +18,7 @@ package org.apache.gluten.backendsapi.velox
 
 import org.apache.gluten.backendsapi.MetricsApi
 import org.apache.gluten.config.{HashShuffleWriterType, RssSortShuffleWriterType, ShuffleWriterType, SortShuffleWriterType}
-import org.apache.gluten.metrics._
+import org.apache.gluten.metrics.{MetricsUtil, _}
 import org.apache.gluten.substrait.{AggregationParams, JoinParams}
 
 import org.apache.spark.SparkContext
@@ -318,7 +318,7 @@ class VeloxMetricsApi extends MetricsApi with Logging {
 
   override def genHashAggregateTransformerMetricsUpdater(
       metrics: Map[String, SQLMetric]): MetricsUpdater =
-    new HashAggregateMetricsUpdaterImpl(metrics)
+    new HashAggregateMetricsUpdater(metrics)
 
   override def genExpandTransformerMetrics(sparkContext: SparkContext): Map[String, SQLMetric] =
     Map(

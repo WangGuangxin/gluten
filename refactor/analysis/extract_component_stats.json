@@ -1,0 +1,47 @@
+{
+  "other": {
+    "identical": 19,
+    "renamed": 11,
+    "minor-modified": 16
+  },
+  "connector_delta": {
+    "identical": 11,
+    "renamed": 0,
+    "minor-modified": 0
+  },
+  "connector_iceberg": {
+    "identical": 48,
+    "renamed": 3,
+    "minor-modified": 0
+  },
+  "extension_rules": {
+    "identical": 12,
+    "renamed": 8,
+    "minor-modified": 2
+  },
+  "test_or_benchmark": {
+    "identical": 63,
+    "renamed": 680,
+    "minor-modified": 5
+  },
+  "csv_datasource": {
+    "identical": 13,
+    "renamed": 2,
+    "minor-modified": 0
+  },
+  "udf": {
+    "identical": 3,
+    "renamed": 2,
+    "minor-modified": 1
+  },
+  "fs": {
+    "identical": 5,
+    "renamed": 0,
+    "minor-modified": 0
+  },
+  "metrics": {
+    "identical": 16,
+    "renamed": 4,
+    "minor-modified": 1
+  }
+}

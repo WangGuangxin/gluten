@@ -16,18 +16,14 @@
  */
 package org.apache.gluten.metrics
 
-import org.apache.spark.sql.execution.metric.SQLMetric
+import org.apache.gluten.substrait.AggregationParams
 
-class WriteFilesMetricsUpdater(val metrics: Map[String, SQLMetric]) extends MetricsUpdater {
-
-  override def updateNativeMetrics(opMetrics: IOperatorMetrics): Unit = {
-    if (opMetrics != null) {
-      val operatorMetrics = opMetrics.asInstanceOf[OperatorMetrics]
-      metrics("physicalWrittenBytes") += operatorMetrics.physicalWrittenBytes
-      metrics("writeIONanos") += operatorMetrics.writeIOTime
-      metrics("wallNanos") += operatorMetrics.wallNanos
-      metrics("numWrittenFiles") += operatorMetrics.numWrittenFiles
-      metrics("loadLazyVectorTime") += operatorMetrics.loadLazyVectorTime
-    }
-  }
+/**
+ * Common trait for hash aggregate metrics updater. Implementations may differ per backend (Velox,
+ * Bolt, etc.), but share the same interface used by MetricsUtil.
+ */
+trait HashAggregateMetricsUpdater extends MetricsUpdater {
+  def updateAggregationMetrics(
+      aggregationMetrics: java.util.ArrayList[OperatorMetrics],
+      aggParams: AggregationParams): Unit
 }

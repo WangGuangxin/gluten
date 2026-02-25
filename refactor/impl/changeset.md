@@ -110,3 +110,46 @@
        - 避免多个模块同时声明导致 `ServiceLoader` 得到“重复候选”，从而触发 `SharedLibraryLoaderUtils` 中的“多于一个实现”保护性异常。
 
 通过这一轮补充变更，`SharedLibraryLoader` 相关能力已经真正收敛到 `backends-common` 的公共 SPI 层，而 Velox / Bolt 保留了 OS 特定的动态库列表和加载细节，实现了接口统一与实现差异并存，为后续将更多 JNI/FS/UDF 相关封装迁移到 common 打下基础。
+
+### Round 2: 抽取 CSV/Metrics/UDF 相关公共类
+
+#### 新增文件
+
+- `gluten/backends-common/src/main/java/org/apache/gluten/metrics/Metrics.java`: (迁移自 `backends-velox`)
+  - **理由**: `Metrics` DTO 在两个后端实现几乎一致（仅 `veloxToArrow` vs `boltToArrow` 命名差异），遵循“保留 velox 命名”规则，迁移至 common。
+- `gluten/backends-common/src/main/java/org/apache/gluten/metrics/OperatorMetrics.java`: (迁移自 `backends-velox`)
+  - **理由**: `OperatorMetrics` DTO 在两个后端实现完全一致 (identical)，迁移至 common。
+- `gluten/backends-common/src/main/scala/org/apache/gluten/datasource/ArrowCSVOptionConverter.scala`: (迁移自 `backends-velox`)
+  - **理由**: CSV 功能的选项转换工具类，两后端实现一致 (identical)，属于纯函数工具，安全迁移。
+- `gluten/backends-common/src/main/scala/org/apache/gluten/metrics/MetricsUtil.scala`: (迁移自 `backends-velox`，并改为使用 `BackendsApiManager.getBackendName` 动态拼接任务名)
+  - **理由**: 指标工具类实现几乎一致 (renamed)，将硬编码后端名抽象为动态获取后迁移。
+- `gluten/backends-common/src/main/scala/org/apache/gluten/metrics/HashAggregateMetricsUpdater.scala`: (新增)
+  - **理由**: 为 `HashAggregateMetricsUpdaterImpl` 抽取公共 `trait`，该文件在两后端有轻微实现差异，因此在 common 中只定义接口。
+- `gluten/backends-common/src/main/scala/org/apache/gluten/metrics/BatchScanMetricsUpdater.scala` 等 15 个 identical 的 metrics updater 实现: (迁移自 `backends-velox`)
+  - **理由**: 这些 updater 实现完全一致，直接迁移到 common，由所有后端复用。
+
+#### 修改文件
+
+- `gluten/backends-velox/src/main/scala/org/apache/gluten/backendsapi/velox/VeloxMetricsApi.scala`:
+  - **变更**: import 改为 `import org.apache.gluten.metrics.{MetricsUtil, _}`，并在 `genHashAggregateTransformerMetricsUpdater` 中实例化 `new HashAggregateMetricsUpdater(metrics)`。
+  - **理由**: 使其依赖 `backends-common` 中的公共 metrics 工具和 trait。
+- `gluten/backends-bolt/src/main/scala/org/apache/gluten/backendsapi/bolt/BoltMetricsApi.scala`:
+  - **变更**: 与 Velox 版本一致，改为使用 `MetricsUtil` 和 `HashAggregateMetricsUpdater`。
+- `gluten/backends-velox/src/main/scala/org/apache/gluten/metrics/HashAggregateMetricsUpdater.scala`:
+  - **变更**: 保留 `HashAggregateMetricsUpdaterImpl` 的实现，但移除本地 trait 定义，改为继承 common 中的 `HashAggregateMetricsUpdater`。
+- `gluten/backends-bolt/src/main/scala/org/apache/gluten/metrics/HashAggregateMetricsUpdater.scala`:
+  - **变更**: 同上，继承 common 中的 trait，保留 Bolt 侧实现差异。
+
+#### 删除文件
+
+- `gluten/backends-velox/src/main/java/org/apache/gluten/metrics/Metrics.java`
+- `gluten/backends-velox/src/main/java/org/apache/gluten/metrics/OperatorMetrics.java`
+- `gluten/backends-bolt/src/main/java/org/apache/gluten/metrics/Metrics.java`
+- `gluten/backends-bolt/src/main/java/org/apache/gluten/metrics/OperatorMetrics.java`
+- `gluten/backends-velox/src/main/scala/org/apache/gluten/datasource/ArrowCSVOptionConverter.scala`
+- `gluten/backends-bolt/src/main/scala/org/apache/gluten/datasource/ArrowCSVOptionConverter.scala`
+- `gluten/backends-velox/src/main/scala/org/apache/gluten/metrics/MetricsUtil.scala`
+- `gluten/backends-bolt/src/main/scala/org/apache/gluten/metrics/MetricsUtil.scala`
+- `gluten/backends-velox/src/main/scala/org/apache/gluten/metrics/BatchScanMetricsUpdater.scala` 及其他 14 个 updater 的 velox 版本
+- `gluten/backends-bolt/src/main/scala/org/apache/gluten/metrics/BatchScanMetricsUpdater.scala` 及其他 14 个 updater 的 bolt 版本
+  - **理由**: 以上文件均已迁移至 `backends-common` 模块，删除原位置的重复实现，避免类冲突。
