@@ -16,6 +16,7 @@
  */
 package org.apache.gluten.spi
 
+import org.apache.gluten.exception.GlutenException
 import org.apache.gluten.jni.JniLibLoader
 
 class SharedLibraryLoaderDebian11 extends SharedLibraryLoader {
@@ -24,7 +25,7 @@ class SharedLibraryLoaderDebian11 extends SharedLibraryLoader {
     osName.contains("Debian") && osVersion.startsWith("11")
   }
 
-  override def loadLib(loader: JniLibLoader): Unit = {
+  private def doLoad(loader: JniLibLoader): Unit = {
     loader.loadAndCreateLink("libicudata.so.67", "libicudata.so")
     loader.loadAndCreateLink("libre2.so.9", "libre2.so")
     loader.loadAndCreateLink("libicuuc.so.67", "libicuuc.so")
@@ -49,6 +50,15 @@ class SharedLibraryLoaderDebian11 extends SharedLibraryLoader {
     loader.loadAndCreateLink("libsnappy.so.1", "libsnappy.so")
     loader.loadAndCreateLink("libcurl.so.4", "libcurl.so")
     loader.loadAndCreateLink("libprotobuf.so.32", "libprotobuf.so")
+  }
+  override def loadLib(loader: AnyRef): Unit = {
+    loader match {
+      case jni: JniLibLoader =>
+        doLoad(jni)
+      case other =>
+        throw new GlutenException(
+          s"Unsupported loader type for SharedLibraryLoaderDebian11: ${other.getClass.getName}")
+    }
   }
 
 }

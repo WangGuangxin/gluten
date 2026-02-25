@@ -69,13 +69,13 @@ public class OnHeapFileSystem implements JniFilesystem {
   }
 
   @Override
-  public ReadFile openFileForRead(String path) {
+  public JniFilesystem.ReadFile openFileForRead(String path) {
     ensureExist(path);
     return new ReadFile(fs.getPath(path));
   }
 
   @Override
-  public WriteFile openFileForWrite(String path) {
+  public JniFilesystem.WriteFile openFileForWrite(String path) {
     ensureNotExist(path);
     return new WriteFile(fs.getPath(path));
   }

@@ -29,9 +29,11 @@ public interface JniFilesystem {
 
   boolean isCapableForNewFile0(long size);
 
-  ReadFile openFileForRead(String path); // todo read Map<String, String> as write options
+  JniFilesystem.ReadFile openFileForRead(
+      String path); // todo read Map<String, String> as write options
 
-  WriteFile openFileForWrite(String path); // todo read Map<String, String> as write options
+  JniFilesystem.WriteFile openFileForWrite(
+      String path); // todo read Map<String, String> as write options
 
   void remove(String path);
 

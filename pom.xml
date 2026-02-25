@@ -1812,6 +1812,7 @@
       </activation>
       <modules>
         <module>gluten-arrow</module>
+        <module>backends-common</module>
         <module>backends-velox</module>
       </modules>
       <properties>
@@ -1825,6 +1826,7 @@
       </activation>
       <modules>
         <module>gluten-arrow</module>
+        <module>backends-common</module>
         <module>backends-bolt</module>
       </modules>
       <properties>

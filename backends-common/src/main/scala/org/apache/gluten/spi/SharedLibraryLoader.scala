@@ -16,12 +16,14 @@
  */
 package org.apache.gluten.spi
 
-import org.apache.gluten.jni.JniLibLoader
-
 /**
  * :: DeveloperApi ::
  *
- * Interface for loading shared libraries based on the operating system name and version.
+ * A common interface for loading native shared libraries based on the operating system name and
+ * version.
+ *
+ * Implementations are discovered via [[java.util.ServiceLoader]] using the
+ * `META-INF/services/org.apache.gluten.spi.SharedLibraryLoader` resource.
  */
 trait SharedLibraryLoader {
 
@@ -38,10 +40,10 @@ trait SharedLibraryLoader {
   def accepts(osName: String, osVersion: String): Boolean
 
   /**
-   * Load the required shared libraries using the given JniLibLoader.
+   * Load the required shared libraries using the given native library loader instance.
    *
-   * @param loader
-   *   JniLibLoader to load the shared libraries
+   * The concrete type of `loader` is backend-specific, e.g. Velox uses
+   * `org.apache.gluten.jni.JniLibLoader` while Bolt uses `org.apache.gluten.jni.BoltJniLibLoader`.
    */
-  def loadLib(loader: JniLibLoader): Unit
+  def loadLib(loader: AnyRef): Unit
 }

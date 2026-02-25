@@ -16,6 +16,7 @@
  */
 package org.apache.gluten.spi
 
+import org.apache.gluten.exception.GlutenException
 import org.apache.gluten.jni.JniLibLoader
 
 class SharedLibraryLoaderCentos8 extends SharedLibraryLoader {
@@ -29,7 +30,7 @@ class SharedLibraryLoaderCentos8 extends SharedLibraryLoader {
     (osName.contains("tencentos") && osVersion.contains("3.2"))
   }
 
-  override def loadLib(loader: JniLibLoader): Unit = {
+  private def doLoad(loader: JniLibLoader): Unit = {
     loader.loadAndCreateLink("libboost_atomic.so.1.84.0", "libboost_atomic.so")
     loader.loadAndCreateLink("libboost_thread.so.1.84.0", "libboost_thread.so")
     loader.loadAndCreateLink("libboost_system.so.1.84.0", "libboost_system.so")
@@ -49,5 +50,15 @@ class SharedLibraryLoaderCentos8 extends SharedLibraryLoader {
     loader.loadAndCreateLink("libre2.so.0", "libre2.so")
     loader.loadAndCreateLink("libsodium.so.23", "libsodium.so")
     loader.loadAndCreateLink("libgeos.so.3.10.7", "libgeos.so")
+  }
+
+  override def loadLib(loader: AnyRef): Unit = {
+    loader match {
+      case jni: JniLibLoader =>
+        doLoad(jni)
+      case other =>
+        throw new GlutenException(
+          s"Unsupported loader type for SharedLibraryLoaderCentos8: ${other.getClass.getName}")
+    }
   }
 }

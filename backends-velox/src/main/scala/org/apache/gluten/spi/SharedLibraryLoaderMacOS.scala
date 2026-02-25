@@ -15,6 +15,7 @@
  * limitations under the License.
  */
 package org.apache.gluten.spi
+import org.apache.gluten.exception.GlutenException
 import org.apache.gluten.jni.JniLibLoader
 
 class SharedLibraryLoaderMacOS extends SharedLibraryLoader {
@@ -23,7 +24,17 @@ class SharedLibraryLoaderMacOS extends SharedLibraryLoader {
     osName.startsWith("Mac OS X") || osName.startsWith("macOS")
   }
 
-  override def loadLib(loader: JniLibLoader): Unit = {
+  private def doLoad(loader: JniLibLoader): Unit = {
     // Placeholder for loading shared libs on MacOS if user needs.
+  }
+
+  override def loadLib(loader: AnyRef): Unit = {
+    loader match {
+      case jni: JniLibLoader =>
+        doLoad(jni)
+      case other =>
+        throw new GlutenException(
+          s"Unsupported loader type for SharedLibraryLoaderMacOS: ${other.getClass.getName}")
+    }
   }
 }

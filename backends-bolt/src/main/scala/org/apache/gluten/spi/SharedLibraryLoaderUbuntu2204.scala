@@ -16,6 +16,7 @@
  */
 package org.apache.gluten.spi
 
+import org.apache.gluten.exception.GlutenException
 import org.apache.gluten.jni.BoltJniLibLoader
 
 class SharedLibraryLoaderUbuntu2204 extends SharedLibraryLoader {

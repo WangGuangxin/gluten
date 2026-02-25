@@ -16,6 +16,7 @@
  */
 package org.apache.gluten.spi
 
+import org.apache.gluten.exception.GlutenException
 import org.apache.gluten.jni.BoltJniLibLoader
 
 class SharedLibraryLoaderDebian12 extends SharedLibraryLoader {
@@ -24,7 +25,7 @@ class SharedLibraryLoaderDebian12 extends SharedLibraryLoader {
     osName.contains("Debian") && osVersion.startsWith("12")
   }
 
-  override def loadLib(loader: BoltJniLibLoader): Unit = {
+  private def doLoad(loader: BoltJniLibLoader): Unit = {
     loader.loadAndCreateLink("libcrypto.so.3", "libcrypto.so")
     loader.loadAndCreateLink("libkrb5support.so.0", "libkrb5support.so")
     loader.loadAndCreateLink("libssl.so.3", "libssl.so")
@@ -55,6 +56,15 @@ class SharedLibraryLoaderDebian12 extends SharedLibraryLoader {
     loader.loadAndCreateLink("libevent-2.1.so.7", "libevent-2.1.so")
     loader.loadAndCreateLink("libcurl.so.4", "libcurl.so")
     loader.loadAndCreateLink("libprotobuf.so.32", "libprotobuf.so")
+  }
+  override def loadLib(loader: AnyRef): Unit = {
+    loader match {
+      case jni: BoltJniLibLoader =>
+        doLoad(jni)
+      case other =>
+        throw new GlutenException(
+          s"Unsupported loader type for SharedLibraryLoaderDebian12: ${other.getClass.getName}")
+    }
   }
 
 }

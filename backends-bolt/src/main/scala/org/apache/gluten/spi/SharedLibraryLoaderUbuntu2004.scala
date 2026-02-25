@@ -16,6 +16,7 @@
  */
 package org.apache.gluten.spi
 
+import org.apache.gluten.exception.GlutenException
 import org.apache.gluten.jni.BoltJniLibLoader
 
 class SharedLibraryLoaderUbuntu2004 extends SharedLibraryLoader {
@@ -24,7 +25,7 @@ class SharedLibraryLoaderUbuntu2004 extends SharedLibraryLoader {
     osName.contains("Ubuntu") && osVersion.startsWith("20.04")
   }
 
-  override def loadLib(loader: BoltJniLibLoader): Unit = {
+  private def doLoad(loader: BoltJniLibLoader): Unit = {
     loader.loadAndCreateLink("libroken.so.18", "libroken.so")
     loader.loadAndCreateLink("libasn1.so.8", "libasn1.so")
     loader.loadAndCreateLink("libboost_context.so.1.84.0", "libboost_context.so")
@@ -65,5 +66,15 @@ class SharedLibraryLoaderUbuntu2004 extends SharedLibraryLoader {
     loader.loadAndCreateLink("libre2.so.5", "libre2.so")
     loader.loadAndCreateLink("libsnappy.so.1", "libsnappy.so")
     loader.loadAndCreateLink("libthrift-0.13.0.so", "libthrift.so")
+  }
+
+  override def loadLib(loader: AnyRef): Unit = {
+    loader match {
+      case jni: BoltJniLibLoader =>
+        doLoad(jni)
+      case other =>
+        throw new GlutenException(
+          s"Unsupported loader type for SharedLibraryLoaderUbuntu2004: ${other.getClass.getName}")
+    }
   }
 }

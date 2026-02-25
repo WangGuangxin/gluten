@@ -16,6 +16,7 @@
  */
 package org.apache.gluten.spi
 
+import org.apache.gluten.exception.GlutenException
 import org.apache.gluten.jni.BoltJniLibLoader
 
 class SharedLibraryLoaderCentos9 extends SharedLibraryLoader {
@@ -25,7 +26,7 @@ class SharedLibraryLoaderCentos9 extends SharedLibraryLoader {
     osName.contains("Red Hat") && osVersion.startsWith("9")
   }
 
-  override def loadLib(loader: BoltJniLibLoader): Unit = {
+  private def doLoad(loader: BoltJniLibLoader): Unit = {
     loader.loadAndCreateLink("libboost_atomic.so.1.84.0", "libboost_atomic.so")
     loader.loadAndCreateLink("libboost_thread.so.1.84.0", "libboost_thread.so")
     loader.loadAndCreateLink("libboost_system.so.1.84.0", "libboost_system.so")
@@ -45,5 +46,15 @@ class SharedLibraryLoaderCentos9 extends SharedLibraryLoader {
     loader.loadAndCreateLink("libre2.so.9", "libre2.so")
     loader.loadAndCreateLink("libsodium.so.23", "libsodium.so")
     loader.loadAndCreateLink("libgeos.so.3.10.7", "libgeos.so")
+  }
+
+  override def loadLib(loader: AnyRef): Unit = {
+    loader match {
+      case jni: BoltJniLibLoader =>
+        doLoad(jni)
+      case other =>
+        throw new GlutenException(
+          s"Unsupported loader type for SharedLibraryLoaderCentos9: ${other.getClass.getName}")
+    }
   }
 }
