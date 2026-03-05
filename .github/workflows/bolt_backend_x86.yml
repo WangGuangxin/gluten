@@ -80,6 +80,8 @@ jobs:
             autoconf \
             automake \
             libtool \
+            perl \
+            wget \
             curl \
             unzip \
             maven
@@ -113,13 +115,23 @@ jobs:
           set -eux
           make bolt-recipe BOLT_BUILD_VERSION=${BOLT_BUILD_VERSION}
 
-      - name: Build native lib (Release) and run C++ tests
+      - name: Build native lib (Release) and run C++ unit tests
         run: |
           set -eux
           make cpp-test-release \
             CI_NUM_THREADS=${CI_NUM_THREADS} \
             GLUTEN_BUILD_VERSION=${GLUTEN_BUILD_VERSION} \
             BOLT_BUILD_VERSION=${BOLT_BUILD_VERSION}
+
+      - name: Upload C++ unit test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bolt-cpp-ut-logs-${{ github.sha }}
+          path: |
+            cpp/build/Release/Testing/**
+            cpp/build/Release/**/CTestTestfile.cmake
+          if-no-files-found: ignore
 
       - name: Build Arrow Java artifacts into local Maven repo
         env:
@@ -192,3 +204,87 @@ jobs:
         run: |
           set -eux
           make ${{ matrix.make_target }}
+
+      - name: Upload JVM test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bolt-${{ matrix.name }}-jvm-ut-report-${{ github.sha }}
+          path: '**/surefire-reports/TEST-*.xml'
+          if-no-files-found: ignore
+
+      - name: Upload JVM unit tests log files
+        if: ${{ !success() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: bolt-${{ matrix.name }}-jvm-ut-log-${{ github.sha }}
+          path: |
+            **/target/*.log
+            **/gluten-ut/**/hs_err_*.log
+            **/gluten-ut/**/core.*
+          if-no-files-found: ignore
+
+  scala-ut:
+    name: Scala UT (spark-ut, Spark 3.5)
+    needs: build-native-and-arrow
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java 11
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '11'
+          cache: maven
+
+      - name: Install test dependencies
+        run: |
+          set -eux
+          sudo apt-get update
+          sudo apt-get install -y wget perl
+
+      - name: Download native libs
+        uses: actions/download-artifact@v4
+        with:
+          name: bolt-native-lib-${{ github.sha }}
+          path: ./cpp/build/releases/
+
+      - name: Download Arrow Maven repo artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: bolt-arrow-m2-${{ github.sha }}
+          path: ./.m2/repository/org/apache/arrow/
+
+      - name: Prepare Spark resources for Spark 3.5
+        run: |
+          set -eux
+          sudo rm -rf /opt/shims/spark35 || true
+          sudo bash .github/workflows/util/install_spark_resources.sh 3.5 /opt
+
+      - name: Run Scala unit tests (spark-ut)
+        env:
+          MAVEN_OPTS: -Dmaven.repo.local=${{ env.MAVEN_REPO_LOCAL }}
+          LD_LIBRARY_PATH: ${{ github.workspace }}/cpp/build/releases:${{ env.LD_LIBRARY_PATH }}
+        run: |
+          set -eux
+          make scala-ut-spark35 SPARK_TEST_HOME=/opt/shims/spark35/spark_home/
+
+      - name: Upload Scala test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bolt-scala-ut-report-${{ github.sha }}
+          path: '**/surefire-reports/TEST-*.xml'
+          if-no-files-found: ignore
+
+      - name: Upload Scala unit tests log files
+        if: ${{ !success() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: bolt-scala-ut-log-${{ github.sha }}
+          path: |
+            **/target/*.log
+            **/gluten-ut/**/hs_err_*.log
+            **/gluten-ut/**/core.*
+          if-no-files-found: ignore
