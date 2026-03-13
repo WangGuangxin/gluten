@@ -320,9 +320,6 @@ object BoltBackendSettings extends BackendSettingsApi {
           fields.flatMap {
             field =>
               field.dataType match {
-                case _: StructType => Some("StructType")
-                case _: ArrayType => Some("ArrayType")
-                case _: MapType => Some("MapType")
                 case _: YearMonthIntervalType => Some("YearMonthIntervalType")
                 case _ => None
               }
