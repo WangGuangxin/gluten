@@ -878,7 +878,7 @@ object BoltConfig extends ConfigRegistry {
       .internal()
       .doc("run shuffle inside bolt")
       .booleanConf
-      .createWithDefault(false)
+      .createWithDefault(true)
 
   val COLUMNAR_MAX_BATCH_SIZE =
     buildOrReplaceConf("spark.gluten.sql.columnar.maxBatchSize").intConf
