@@ -158,10 +158,6 @@ class ColumnarShuffleWriter[K, V](
 
   private val taskContext: TaskContext = TaskContext.get()
 
-  // only used in round-robin shuffle writer, since we remove the sort column,
-  // we don't need to care about the hash column
-  private val sortBeforeRepartition: Boolean = false
-
   private def availableOffHeapPerTask(): Long = {
     val perTask =
       SparkMemoryUtil.getCurrentAvailableOffHeapMemory / SparkResourceUtil.getTaskSlots(conf)
@@ -192,7 +188,6 @@ class ColumnarShuffleWriter[K, V](
     builder.setMemLimit(availableOffHeapPerTask())
     builder.setPushBufferMaxSize(0)
     builder.setWriterType("local")
-    builder.setSortBeforeRepartition(sortBeforeRepartition)
     builder.setForcedWriterType(forceShuffleWriterType)
     builder.setUseV2PreallocThreshold(useV2PreAllocSizeThreshold)
     builder.setRowCompressionMinCols(rowVectorModeCompressionMinColumns)

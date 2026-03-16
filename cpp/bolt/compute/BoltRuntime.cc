@@ -325,11 +325,12 @@ std::shared_ptr<ShuffleWriterBase> BoltRuntime::createShuffleWriter(
     std::shared_ptr<RssClient> rssClient,
     std::shared_ptr<ColumnarBatch> cb) {
   int32_t numColumnsExludePid = cb ? cb->numColumns() - 1 : 0;
-  // used to calculate prealloc row size, only used for hash/round_robin(with pid) partitioning
+  // used to calculate prealloc row size, only used for hash partitioning
   int32_t firstBatchRowNumber = 0, firstBatchFlatSize = 0;
-  if (info.forced_writer_type() == 0 &&
-      (info.partitioning_name() == "hash" ||
-       (info.partitioning_name() == "round_robin" && info.sort_before_repartition()))) {
+  using bytedance::bolt::shuffle::sparksql::supportAdaptiveShuffleWriter;
+  using bytedance::bolt::shuffle::sparksql::toPartitioning;
+  // for partitioning support adaptive shuffle writer, should pass first batch information to compute preAllocSize
+  if (info.forced_writer_type() == 0 && supportAdaptiveShuffleWriter(toPartitioning(info.partitioning_name()))) {
     auto boltColumnBatch = BoltColumnarBatch::from(leafPool_.get(), cb);
     BOLT_CHECK_NOT_NULL(boltColumnBatch);
     const auto& rv = boltColumnBatch->getRowVector();

@@ -40,7 +40,6 @@ class BoltShuffleWriterWrapper : public ShuffleWriterBase {
         .partitioning = bytedance::bolt::shuffle::sparksql::toPartitioning(info.partitioning_name()),
         .taskAttemptId = info.task_attempt_id(),
         .startPartitionId = info.start_partition_id(),
-        .sort_before_repartition = info.sort_before_repartition(),
         .forceShuffleWriterType = info.forced_writer_type(),
         .useV2PreallocSizeThreshold = info.use_v2_prealloc_threshold(),
         .rowvectorModeCompressionMinColumns = info.row_compression_min_cols(),
