@@ -84,10 +84,6 @@ class BoltCelebornColumnarShuffleWriter[K, V](
 
   private var splitResult: BoltSplitResult = _
 
-  // only used in round-robin shuffle writer, since we remove the sort column,
-  // we don't need to care about the hash column
-  private val sortBeforeRepartition: Boolean = false
-
   private def availableOffHeapPerTask(): Long = {
     SparkMemoryUtil.getCurrentAvailableOffHeapMemory / SparkResourceUtil.getTaskSlots(conf)
   }
@@ -116,7 +112,6 @@ class BoltCelebornColumnarShuffleWriter[K, V](
     builder.setPushBufferMaxSize(clientPushBufferMaxSize)
     builder.setShuffleBatchByteSize(BoltConfig.get.maxShuffleBatchByteSize)
     builder.setWriterType("celeborn")
-    builder.setSortBeforeRepartition(sortBeforeRepartition)
     builder.setForcedWriterType(forceShuffleWriterType)
     builder.setUseV2PreallocThreshold(useV2PreAllocSizeThreshold)
     builder.setRowCompressionMinCols(rowVectorModeCompressionMinColumns)

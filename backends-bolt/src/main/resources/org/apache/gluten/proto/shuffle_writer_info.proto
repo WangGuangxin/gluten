@@ -41,7 +41,6 @@ message ShuffleWriterInfo {
 
   // ==================== Advanced Tuning ====================
   string writer_type = 19;            // Writer implementation, "local"/"celeborn"
-  bool sort_before_repartition = 20;  // Pre-sort flag
   int32 forced_writer_type = 21;      // Writer type override, 0/1/2
 
   // ==================== Vectorization Config ====================
