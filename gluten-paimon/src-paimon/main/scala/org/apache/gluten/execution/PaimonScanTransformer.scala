@@ -234,19 +234,31 @@ abstract class AbstractPaimonScanTransformer(
     scan match {
       case paimonScan: PaimonScan =>
         val primaryKeys = paimonScan.table.primaryKeys()
+        val isMetadataColumn: Attribute => Boolean = attr =>
+          SUPPORTED_METADATA_COLUMNS.contains(attr.name)
+        val touchesMetadata: Expression => Boolean =
+          e => e.references.exists(a => SUPPORTED_METADATA_COLUMNS.contains(a.name))
 
         def isAllowedExpr(expr: Expression): Boolean = expr match {
           // Equality comparisons with pk and literal
-          case EqualTo(attr: Attribute, lit: Literal) => primaryKeys.contains(attr.name)
-          case EqualTo(lit: Literal, attr: Attribute) => primaryKeys.contains(attr.name)
-          case GreaterThan(attr: Attribute, lit: Literal) => primaryKeys.contains(attr.name)
-          case GreaterThan(lit: Literal, attr: Attribute) => primaryKeys.contains(attr.name)
-          case LessThan(attr: Attribute, lit: Literal) => primaryKeys.contains(attr.name)
-          case LessThan(lit: Literal, attr: Attribute) => primaryKeys.contains(attr.name)
+          case EqualTo(attr: Attribute, lit: Literal) =>
+            primaryKeys.contains(attr.name) && !isMetadataColumn(attr)
+          case EqualTo(lit: Literal, attr: Attribute) =>
+            primaryKeys.contains(attr.name) && !isMetadataColumn(attr)
+          case GreaterThan(attr: Attribute, lit: Literal) =>
+            primaryKeys.contains(attr.name) && !isMetadataColumn(attr)
+          case GreaterThan(lit: Literal, attr: Attribute) =>
+            primaryKeys.contains(attr.name) && !isMetadataColumn(attr)
+          case LessThan(attr: Attribute, lit: Literal) =>
+            primaryKeys.contains(attr.name) && !isMetadataColumn(attr)
+          case LessThan(lit: Literal, attr: Attribute) =>
+            primaryKeys.contains(attr.name) && !isMetadataColumn(attr)
 
           // Like operator with pk and literal
-          case Like(attr: Attribute, lit: Literal, _) => primaryKeys.contains(attr.name)
-          case Like(lit: Literal, attr: Attribute, _) => primaryKeys.contains(attr.name)
+          case Like(attr: Attribute, lit: Literal, _) =>
+            primaryKeys.contains(attr.name) && !isMetadataColumn(attr)
+          case Like(lit: Literal, attr: Attribute, _) =>
+            primaryKeys.contains(attr.name) && !isMetadataColumn(attr)
 
           // Logical combinators
           case And(left, right) => isAllowedExpr(left) && isAllowedExpr(right)
@@ -260,12 +272,11 @@ abstract class AbstractPaimonScanTransformer(
           case _ => false
         }
 
-        pushdownFilters match {
-          case filters if !primaryKeys.isEmpty =>
-            val result = filters.filter(isAllowedExpr) // keep only allowed ones
-            result
-          case filters => filters
-        }
+        // Always strip any filter that references Paimon metadata columns.
+        val noMetadataFilters = pushdownFilters.filterNot(touchesMetadata)
+
+        // For PK tables: keep only allow-listed PK predicates; otherwise return the metadata-free set.
+        if (!primaryKeys.isEmpty) noMetadataFilters.filter(isAllowedExpr) else noMetadataFilters
 
       case _ => pushdownFilters
     }
