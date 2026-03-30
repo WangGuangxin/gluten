@@ -38,7 +38,6 @@ class ArrowUtils {
   static ArrowOptions getBridgeOptions() {
     ArrowOptions options;
     options.timestampUnit = static_cast<TimestampUnit>(6);
-    options.exportToStringView = true;
     return options;
   }
 };
