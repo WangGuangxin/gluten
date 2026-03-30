@@ -49,13 +49,14 @@ namespace gluten {
 namespace {
 
 void registerFunctionOverwrite() {
-  bolt::functions::registerUnaryNumeric<RoundFunction>({"round"});
-  bolt::registerFunction<RoundFunction, int8_t, int8_t, int32_t>({"round"});
-  bolt::registerFunction<RoundFunction, int16_t, int16_t, int32_t>({"round"});
-  bolt::registerFunction<RoundFunction, int32_t, int32_t, int32_t>({"round"});
-  bolt::registerFunction<RoundFunction, int64_t, int64_t, int32_t>({"round"});
-  bolt::registerFunction<RoundFunction, double, double, int32_t>({"round"});
-  bolt::registerFunction<RoundFunction, float, float, int32_t>({"round"});
+  // Disable gluten internal round function
+  //  bolt::functions::registerUnaryNumeric<RoundFunction>({"round"});
+  //  bolt::registerFunction<RoundFunction, int8_t, int8_t, int32_t>({"round"});
+  //  bolt::registerFunction<RoundFunction, int16_t, int16_t, int32_t>({"round"});
+  //  bolt::registerFunction<RoundFunction, int32_t, int32_t, int32_t>({"round"});
+  //  bolt::registerFunction<RoundFunction, int64_t, int64_t, int32_t>({"round"});
+  //  bolt::registerFunction<RoundFunction, double, double, int32_t>({"round"});
+  //  bolt::registerFunction<RoundFunction, float, float, int32_t>({"round"});
 
   auto kRowConstructorWithNull = RowConstructorWithNullCallToSpecialForm::kRowConstructorWithNull;
   bolt::exec::registerVectorFunction(
