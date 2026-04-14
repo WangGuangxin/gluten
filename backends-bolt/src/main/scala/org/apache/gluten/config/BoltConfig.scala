@@ -110,6 +110,10 @@ class BoltConfig(conf: SQLConf) extends GlutenConfig(conf) {
     getConf(RECOMMENDED_COLUMN2ROW_SIZE)
   }
 
+  def shuffleCheckRatio: Double = {
+    getConf(COLUMNAR_BOLT_SHUFFLE_CHECK_RATIO)
+  }
+
   def maxShuffleBatchByteSize: Int = getConf(COLUMNAR_MAX_SHUFFLE_BATCH_BYTE_SIZE)
 
   def shuffleInsideBolt: Boolean =
@@ -859,6 +863,14 @@ object BoltConfig extends ConfigRegistry {
       .internal()
       .intConf
       .createWithDefault(400 * 1024)
+
+  val COLUMNAR_BOLT_SHUFFLE_CHECK_RATIO =
+    buildConf("spark.gluten.sql.columnar.backend.bolt.shuffle.check.ratio")
+      .internal()
+      .doc("The ratio in [0, 1] for enabling bolt shuffle debug check.")
+      .doubleConf
+      .checkValue(v => v >= 0.0 && v <= 1.0, "must be in [0, 1]")
+      .createWithDefault(0)
 
   val COLUMNAR_MAX_SHUFFLE_BATCH_BYTE_SIZE =
     buildConf(GlutenConfig.GLUTEN_MAX_SHUFFLE_BATCH_BYTE_SIZE_KEY)

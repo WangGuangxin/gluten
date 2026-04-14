@@ -77,6 +77,9 @@ class BoltCelebornColumnarShuffleWriter[K, V](
   private val recommendedColumn2RowSize =
     BoltConfig.get.recommendedColumn2RowSize
 
+  private val shuffleCheckRatio =
+    BoltConfig.get.shuffleCheckRatio
+
   private val enableVectorCombination =
     BoltConfig.get.enableVectorCombination
 
@@ -120,6 +123,7 @@ class BoltCelebornColumnarShuffleWriter[K, V](
     builder.setAccumulateBatchMaxColumns(accumulateBatchMaxColumns)
     builder.setAccumulateBatchMaxBatches(accumulateBatchMaxBatches)
     builder.setRecommendedC2RSize(recommendedColumn2RowSize)
+    builder.setShuffleCheckRatio(shuffleCheckRatio)
 
     builder.build()
   }

@@ -48,6 +48,7 @@ class BoltShuffleWriterWrapper : public ShuffleWriterBase {
         .accumulateBatchMaxColumns = info.accumulate_batch_max_columns(),
         .accumulateBatchMaxBatches = info.accumulate_batch_max_batches(),
         .recommendedColumn2RowSize = info.recommended_c2r_size(),
+        .shuffleCheckRatio = info.shuffle_check_ratio(),
     };
 
     // Convert codec string into lowercase.
