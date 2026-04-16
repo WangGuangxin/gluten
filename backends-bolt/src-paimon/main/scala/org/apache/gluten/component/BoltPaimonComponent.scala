@@ -28,7 +28,6 @@ import org.apache.gluten.extension.injector.Injector
 import org.apache.gluten.proto.PaimonTableEnhancement
 import org.apache.gluten.sql.shims.SparkShimLoader
 import org.apache.gluten.substrait.extensions.{AdvancedExtensionNode, ExtensionBuilder}
-
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, DynamicPruningExpression, Expression, Literal}
 import org.apache.spark.sql.catalyst.plans.QueryPlan
@@ -92,9 +91,19 @@ case class BoltPaimonScanTransformer(
   }
 
   override def getAdvancedExtension: Option[AdvancedExtensionNode] = {
+    // Get table path from Paimon scan
+    val tablePath = scan match {
+      case paimonScan: org.apache.paimon.spark.PaimonScan =>
+        paimonScan.table.options().get(org.apache.paimon.CoreOptions.PATH.key())
+      case _ => ""
+    }
+
+    val useNativePaimonConnector = AbstractPaimonScanTransformer.canUseNativePaimonConnector(scan)
     val tableEnhancement = PaimonTableEnhancement
       .newBuilder()
       .putAllTableProperties(tableProperties.asJava)
+      .setTablePath(tablePath)
+      .setUseNativePaimonConnector(useNativePaimonConnector)
       .build
 
     Some(

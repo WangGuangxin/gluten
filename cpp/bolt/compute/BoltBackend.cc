@@ -46,6 +46,7 @@
 #include "bolt/common/caching/SsdCache.h"
 #include "bolt/common/file/FileSystems.h"
 #include "bolt/connectors/hive/HiveConnector.h"
+#include "bolt/connectors/paimon/PaimonConnector.h"
 #include "bolt/connectors/hive/HiveDataSource.h"
 #include "bolt/connectors/hive/storage_adapters/abfs/RegisterAbfsFileSystem.h" // @manual
 #include "bolt/connectors/hive/storage_adapters/gcs/RegisterGcsFileSystem.h" // @manual
@@ -430,6 +431,10 @@ void BoltBackend::initConnector(const std::shared_ptr<bolt::config::ConfigBase>&
   }
   bolt::connector::registerConnector(
       std::make_shared<bolt::connector::hive::HiveConnector>(kHiveConnectorId, mutableConf, ioExecutor_.get()));
+  // Register the native Paimon connector for serialized-split path.
+  const auto paimonConnectorFactory = std::make_shared<bolt::connector::paimon::PaimonConnectorFactory>();
+  bolt::connector::registerConnector(
+      paimonConnectorFactory->newConnector(kPaimonConnectorId, mutableConf, ioExecutor_.get()));
 #ifdef GLUTEN_ENABLE_GPU
   if (backendConf_->get<bool>(kCudfEnableTableScan, kCudfEnableTableScanDefault) &&
       backendConf_->get<bool>(kCudfEnabled, kCudfEnabledDefault)) {

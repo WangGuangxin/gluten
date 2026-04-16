@@ -138,7 +138,7 @@ message ReadRel {
       // The index of the partition this item belongs to
       uint64 partition_index = 6;
 
-      
+
 
       // The start position in byte to read from this item
       uint64 start = 7;
@@ -210,6 +210,9 @@ message ReadRel {
         bool use_hive_split = 7;
         bool raw_convertible = 8;
         repeated string primary_keys = 9;
+        // Serialized Paimon split from Java DataSplit.serialize()
+        // Used by native Paimon connector to deserialize splits directly
+        bytes serialized_split = 10;
       }
 
       // File reading options
@@ -1399,7 +1402,7 @@ message Expression {
 message GenerateRel {
   RelCommon common = 1;
   Rel input = 2;
-  
+
   Expression generator = 3;
   repeated Expression child_output = 4;
   bool outer = 5;

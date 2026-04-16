@@ -19,6 +19,7 @@
 #include <bolt/common/compression/Compression.h>
 
 #include "PaimonTableEnhancement.pb.h"
+#include "bolt/connectors/paimon/PaimonTableHandle.h"
 #include "TypeUtils.h"
 #include "VariantToVectorConverter.h"
 #include "operators/plannodes/RowVectorStream.h"
@@ -26,19 +27,16 @@
 #include "bolt/exec/TableWriter.h"
 #include "bolt/type/Type.h"
 
-#include "utils/ConfigExtractor.h"
 #include "utils/BoltWriterUtils.h"
 
 #include "config.pb.h"
 #include "config/GlutenConfig.h"
 #include "config/BoltConfig.h"
-#include "bolt/shuffle/sparksql/ShuffleWriterNode.h"
 #include "bolt/shuffle/sparksql/ShuffleReaderNode.h"
 #include "shuffle/ReaderStreamIteratorWrapper.h"
 #include "shuffle/BoltShuffleReaderWrapper.h"
 #include "jni/JniCommon.h"
 #include "shuffle_reader_info.pb.h"
-#include "compute/BoltRuntime.h"
 
 
 #ifdef GLUTEN_ENABLE_GPU
@@ -1367,16 +1365,42 @@ core::PlanNodePtr SubstraitToBoltPlanConverter::toBoltPlan(const ::substrait::Re
 
   std::shared_ptr<connector::ConnectorTableHandle> tableHandle;
   auto remainingFilter = readRel.has_filter() ? exprConverter_->toBoltExpr(readRel.filter(), baseSchema) : nullptr;
-  auto connectorId = kHiveConnectorId;
-  if (useCudfTableHandle(splitInfos_) && boltCfg_->get<bool>(kCudfEnableTableScan, kCudfEnableTableScanDefault) &&
-      boltCfg_->get<bool>(kCudfEnabled, kCudfEnabledDefault)) {
-#ifdef GLUTEN_ENABLE_GPU
-    connectorId = kCudfHiveConnectorId;
-#endif
+
+  // Check if this is a Paimon table with tablePath (native Paimon connector)
+  bool isPaimonTable = false;
+  bool usePaimonConnector = false;
+  std::string tablePath;
+  if (readRel.has_advanced_extension()) {
+    const auto& ext = readRel.advanced_extension();
+    if (ext.has_enhancement()) {
+      gluten::PaimonTableEnhancement paimonParameters;
+      if (ext.enhancement().UnpackTo(&paimonParameters)) {
+        tablePath = paimonParameters.table_path();
+        isPaimonTable = !tablePath.empty();
+        if (paimonParameters.use_native_paimon_connector()) {
+          usePaimonConnector = true;
+        }
+      }
+    }
   }
-  bytedance::bolt::connector::hive::SubfieldFilters subfieldFilters;
-  tableHandle = std::make_shared<connector::hive::HiveTableHandle>(
-      connectorId, "hive_table", filterPushdownEnabled, std::move(subfieldFilters), remainingFilter, tableSchema, tableParameters);
+
+  if (isPaimonTable && usePaimonConnector) {
+    tableHandle = std::make_shared<bytedance::bolt::connector::paimon::PaimonTableHandle>(
+        kPaimonConnectorId, tablePath, tablePath, tableParameters,
+        remainingFilter);
+  } else {
+    // Use Hive connector
+    auto connectorId = kHiveConnectorId;
+    if (useCudfTableHandle(splitInfos_) && boltCfg_->get<bool>(kCudfEnableTableScan, kCudfEnableTableScanDefault) &&
+        boltCfg_->get<bool>(kCudfEnabled, kCudfEnabledDefault)) {
+#ifdef GLUTEN_ENABLE_GPU
+      connectorId = kCudfHiveConnectorId;
+#endif
+    }
+    bytedance::bolt::connector::hive::SubfieldFilters subfieldFilters;
+    tableHandle = std::make_shared<connector::hive::HiveTableHandle>(
+        connectorId, "hive_table", filterPushdownEnabled, std::move(subfieldFilters), remainingFilter, tableSchema, tableParameters);
+  }
 
   // Get assignments and out names.
   std::vector<std::string> outNames;

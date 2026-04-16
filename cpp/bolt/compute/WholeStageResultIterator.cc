@@ -30,6 +30,7 @@
 #include "bolt/exec/PlanNodeStats.h"
 #include "bolt/shuffle/sparksql/ShuffleWriterNode.h"
 #include "connectors/hive/PaimonConnectorSplit.h"
+#include "connectors/paimon/PaimonConnectorSplit.h"
 #include "compute/paimon/PaimonPlanUtils.h"
 
 #ifdef GLUTEN_ENABLE_GPU
@@ -240,34 +241,48 @@ void WholeStageResultIterator::initTask() {
 
       std::shared_ptr<bolt::connector::ConnectorSplit> split;
       if (auto paimonSplitInfo = std::dynamic_pointer_cast<paimon::PaimonSplitInfo>(scanInfo)) {
-        const auto& splitMetadata = paimonSplitInfo->metaAt(idx);
-        std::unordered_map<std::string, std::string> splitInfo = customSplitInfo;
-        splitInfo[bytedance::bolt::connector::paimon::kFileMetaFirstRowID] =
-        std::to_string(splitMetadata.firstRowId);
-        splitInfo[bytedance::bolt::connector::paimon::kFileMetaMaxSequenceNumber] =
-        std::to_string(splitMetadata.maxSequenceNumber);
+        // Determine once per SplitInfo whether this is native-Paimon mode
+        // (serialized splits) or Hive-fallback mode.  All splits from a single
+        // PaimonSplitInfo must use the same connector ID — Bolt rejects mixed IDs.
+        const bool isNativePaimon = !paimonSplitInfo->serializedPaimonSplits_.empty();
 
-        auto split = std::make_shared<bolt::connector::hive::HiveConnectorSplit>(
-            kHiveConnectorId,
-            paths[idx],
-            splitMetadata.format,
-            starts[idx],
-            lengths[idx],
-            partitionKeys,
-            std::optional<int32_t>{splitMetadata.bucket},
-            nullptr,
-            std::move(splitInfo),
-            std::make_shared<std::string>(),
-            std::unordered_map<std::string, std::string>(),
-            properties[idx]->fileSize.value_or(0),
-            std::nullopt,
-            metadataColumn);
-        if (!splitMetadata.rawConvertible) {
-          LOG(INFO) << "Split is not rawConvertible, adding to group " << splitMetadata.splitGroup << " : " << split->toString();
-          splitGroups[splitMetadata.splitGroup].push_back(split);
-        } else {
-          LOG(INFO) << "Split is rawConvertible, adding single split: " << split->toString();
+        if (isNativePaimon) {
+          // Native Paimon connector: each index maps to one serialized DataSplit.
+          const auto& splitData = paimonSplitInfo->serializedPaimonSplits_[idx];
+          split = std::make_shared<bytedance::bolt::connector::paimon::PaimonConnectorSplit>(
+              kPaimonConnectorId, splitData.data(), splitData.length());
           connectorSplits.emplace_back(split);
+        } else {
+          // Hive-fallback: per-file hive-style metadata (paths, bucket, etc.)
+          const auto& splitMetadata = paimonSplitInfo->metaAt(idx);
+          std::unordered_map<std::string, std::string> splitInfo = customSplitInfo;
+          splitInfo[bytedance::bolt::connector::paimon::kFileMetaFirstRowID] =
+              std::to_string(splitMetadata.firstRowId);
+          splitInfo[bytedance::bolt::connector::paimon::kFileMetaMaxSequenceNumber] =
+              std::to_string(splitMetadata.maxSequenceNumber);
+
+          const auto& hiveSplit = std::make_shared<bolt::connector::hive::HiveConnectorSplit>(
+              kHiveConnectorId,
+              paths[idx],
+              splitMetadata.format,
+              starts[idx],
+              lengths[idx],
+              partitionKeys,
+              std::optional<int32_t>{splitMetadata.bucket},
+              nullptr,
+              std::move(splitInfo),
+              std::make_shared<std::string>(),
+              std::unordered_map<std::string, std::string>(),
+              properties[idx]->fileSize.value_or(0),
+              std::nullopt,
+              metadataColumn);
+          if (!splitMetadata.rawConvertible) {
+            LOG(INFO) << "Split is not rawConvertible, adding to group " << splitMetadata.splitGroup << " : " << hiveSplit->toString();
+            splitGroups[splitMetadata.splitGroup].push_back(hiveSplit);
+          } else {
+            LOG(INFO) << "Split is rawConvertible, adding single split: " << hiveSplit->toString();
+            connectorSplits.emplace_back(hiveSplit);
+          }
         }
       } else {
       // } else if (auto icebergSplitInfo = std::dynamic_pointer_cast<IcebergSplitInfo>(scanInfo)) {

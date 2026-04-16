@@ -8,4 +8,9 @@ option java_multiple_files = true;
 
 message PaimonTableEnhancement {
   map<string, string> table_properties = 1;
+  string table_path = 2;
+  // When true, the native Paimon C++ connector should be used (serialized splits).
+  // When false, the Hive connector fallback path should be used (per-file hive-style
+  // metadata). This must match how splits were produced on the Java side.
+  bool use_native_paimon_connector = 3;
 }

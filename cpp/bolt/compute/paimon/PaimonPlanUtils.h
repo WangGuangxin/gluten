@@ -38,6 +38,12 @@ struct PaimonSplitInfo : SplitInfo {
 
     std::unordered_map<std::string, FileMeta> metaByPath_;
 
+    // Serialized Paimon splits from Java DataSplit.serialize().
+    // Used by native Paimon connector to deserialize splits directly.
+    // One entry per FileOrFiles in the proto (i.e., one per DataSplit in the partition).
+    // Populated only for the native connector path; empty for hive-fallback path.
+    std::vector<std::string> serializedPaimonSplits_;
+
     explicit PaimonSplitInfo(const SplitInfo& splitInfo)
         : SplitInfo(splitInfo) {}
 
