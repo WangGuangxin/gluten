@@ -19,6 +19,7 @@ package org.apache.gluten.execution
 import org.apache.gluten.backendsapi.BackendsApiManager
 import org.apache.gluten.component.BoltPaimonScanTransformer
 import org.apache.gluten.test.FallbackUtil
+
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.Row
@@ -52,7 +53,7 @@ class BoltPaimonSuite extends WholeStageTransformerSuite {
         "org.apache.paimon.spark.extensions.PaimonSparkSessionExtensions")
       .set("spark.sql.catalog.paimon", "org.apache.paimon.spark.SparkCatalog")
       .set("spark.sql.catalog.paimon.warehouse", s"file://$rootPath/data-paimon")
-      // .set("spark.gluten.sql.debug", "true")
+    // .set("spark.gluten.sql.debug", "true")
   }
 
   protected val dbName0: String = "test"
@@ -2347,7 +2348,6 @@ class BoltPaimonSuite extends WholeStageTransformerSuite {
     }
   }
 
-
   test("paimon native scan: filter pushdown") {
     val tbl_name = s"paimon_tb"
 
@@ -2361,8 +2361,10 @@ class BoltPaimonSuite extends WholeStageTransformerSuite {
                    |)""".stripMargin)
 
       // Insert 100 rows: id 1..100
-      spark.sql((1 to 100).map(i => s"($i, 'name_$i', ${i * 1.0})").mkString(
-        s"INSERT INTO $tbl_name VALUES ", ",", ""))
+      spark.sql(
+        (1 to 100)
+          .map(i => s"($i, 'name_$i', ${i * 1.0})")
+          .mkString(s"INSERT INTO $tbl_name VALUES ", ",", ""))
 
       // --- Test 1: Filter overlaps data range — should return matching rows ---
       // id >= 10 AND id <= 20 → 11 rows (10 through 20 inclusive)
@@ -2372,7 +2374,8 @@ class BoltPaimonSuite extends WholeStageTransformerSuite {
       val overlappingResult = overlappingDf.collect()
 
       assert(overlappingResult.length == 11, "Expected 11 rows in overlap range")
-      assert(overlappingResult.map(_.getInt(0)).toSeq == (10 to 20).toSeq,
+      assert(
+        overlappingResult.map(_.getInt(0)).toSeq == (10 to 20).toSeq,
         "Overlap range should contain ids 10..20")
 
       // Verify pushdown: scan should have read SOME data (not all 100 rows,
@@ -2401,16 +2404,14 @@ class BoltPaimonSuite extends WholeStageTransformerSuite {
       )
 
       // value = id * 1.0, so value > 50.5 means id >= 51 → 50 rows (51..100)
-      assert(valueDf.collect().head.getLong(0) == 50L,
-        "Non-PK column filter should return 50 rows")
+      assert(valueDf.collect().head.getLong(0) == 50L, "Non-PK column filter should return 50 rows")
 
       // val inRows3 = rawInputRows(valueDf)
       // assert(inRows3 > 0L, "rawInputRows must be > 0 for non-PK filter")
 
       // --- Test 4: Full table scan without filter — all 100 rows ---
       val fullDf = spark.sql(s"SELECT COUNT(*) as cnt FROM $tbl_name")
-      assert(fullDf.collect().head.getLong(0) == 100L,
-        "Full table scan must return 100 rows")
+      assert(fullDf.collect().head.getLong(0) == 100L, "Full table scan must return 100 rows")
 
       // val inRows4 = rawInputRows(fullDf)
       // assert(inRows4 > 0L, "rawInputRows must be > 0 for full scan")

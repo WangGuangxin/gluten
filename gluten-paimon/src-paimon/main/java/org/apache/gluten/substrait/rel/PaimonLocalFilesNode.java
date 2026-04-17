@@ -122,7 +122,8 @@ public class PaimonLocalFilesNode extends LocalFilesNode {
         new ArrayList<>(),
         new ArrayList<>(),
         IntStream.range(0, serializedPaimonSplits.size())
-                .mapToObj(unused -> new HashMap<String, String>()).collect(Collectors.toList()),
+            .mapToObj(unused -> new HashMap<String, String>())
+            .collect(Collectors.toList()),
         new ArrayList<>(),
         fileFormat,
         preferredLocations,

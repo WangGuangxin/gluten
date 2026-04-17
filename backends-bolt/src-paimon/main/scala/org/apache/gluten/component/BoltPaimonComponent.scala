@@ -28,6 +28,7 @@ import org.apache.gluten.extension.injector.Injector
 import org.apache.gluten.proto.PaimonTableEnhancement
 import org.apache.gluten.sql.shims.SparkShimLoader
 import org.apache.gluten.substrait.extensions.{AdvancedExtensionNode, ExtensionBuilder}
+
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, DynamicPruningExpression, Expression, Literal}
 import org.apache.spark.sql.catalyst.plans.QueryPlan

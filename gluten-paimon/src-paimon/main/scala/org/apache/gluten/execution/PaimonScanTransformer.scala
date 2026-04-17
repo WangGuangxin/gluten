@@ -20,6 +20,7 @@ import org.apache.gluten.exception.GlutenNotSupportException
 import org.apache.gluten.sql.shims.SparkShimLoader
 import org.apache.gluten.substrait.rel.{PaimonLocalFilesBuilder, SplitInfo}
 import org.apache.gluten.substrait.rel.LocalFilesNode.ReadFileFormat
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.softaffinity.SoftAffinity
@@ -33,6 +34,7 @@ import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
+
 import org.apache.paimon.CoreOptions
 import org.apache.paimon.CoreOptions.{ChangelogProducer, MergeEngine}
 import org.apache.paimon.io.DataOutputSerializer
@@ -46,6 +48,7 @@ import org.apache.paimon.types.DecimalType
 import java.lang.{Integer => JInteger}
 import java.lang.{Long => JLong}
 import java.util.{HashMap => JHashMap, Map => JMap}
+
 import scala.collection.JavaConverters._
 import scala.collection.immutable.HashMap
 import scala.collection.mutable
@@ -329,8 +332,8 @@ abstract class AbstractPaimonScanTransformer(
 object AbstractPaimonScanTransformer {
 
   /**
-   * Determines whether the native Paimon C++ connector can be used for the given scan.
-   * Returns false (forcing Hive-fallback) when any of these conditions hold:
+   * Determines whether the native Paimon C++ connector can be used for the given scan. Returns
+   * false (forcing Hive-fallback) when any of these conditions hold:
    *   - The native split feature is disabled via config
    *   - The read schema contains Paimon metadata columns (_ROW_ID, _SEQUENCE_NUMBER, etc.)
    *   - The read schema contains CHAR-typed columns (not supported by paimon-cpp)
@@ -344,10 +347,14 @@ object AbstractPaimonScanTransformer {
     if (SQLConf.get.getConf(PaimonConfig.PAIMON_NATIVE_SPLIT_ENABLED)) {
       useHiveSplit = false
     }
-    val schemaHasMetadataCols = scan.readSchema().fields
+    val schemaHasMetadataCols = scan
+      .readSchema()
+      .fields
       .exists(f => SUPPORTED_METADATA_COLUMNS.contains(f.name))
     // Paimon C++ connector does not support CHAR-typed columns.
-    val schemaHasCharType = scan.readSchema().fields
+    val schemaHasCharType = scan
+      .readSchema()
+      .fields
       .exists(_.dataType.isInstanceOf[org.apache.spark.sql.types.CharType])
     // Paimon C++ connector does not support count, product, or listagg aggregate
     // functions on aggregation merge engine tables. These are configured as table
@@ -356,8 +363,9 @@ object AbstractPaimonScanTransformer {
       case paimonScan: PaimonScan =>
         val props = new CoreOptions(paimonScan.table.options()).toMap.asScala
         val unsupportedFuncs = Set("count", "product", "listagg")
-        props.exists { case (key, value) =>
-          key.startsWith("fields.") && key.endsWith(".aggregate-function") &&
+        props.exists {
+          case (key, value) =>
+            key.startsWith("fields.") && key.endsWith(".aggregate-function") &&
             unsupportedFuncs.contains(value.toLowerCase)
         }
       case _ => false
