@@ -1,0 +1,290 @@
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: Bolt Backend (x86)
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/bolt_backend_x86.yml'
+      - 'Makefile'
+      - 'pom.xml'
+      - 'backends-bolt/**'
+      - 'gluten-core/**'
+      - 'gluten-substrait/**'
+      - 'gluten-ut/**'
+      - 'gluten-celeborn/**'
+      - 'gluten-delta/**'
+      - 'gluten-iceberg/**'
+      - 'gluten-hudi/**'
+      - 'gluten-paimon/**'
+      - 'package/**'
+      - 'shims/**'
+      - 'tools/gluten-it/**'
+      - 'cpp/**'
+      - 'dev/**'
+
+env:
+  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
+  BOLT_BUILD_VERSION: main
+  GLUTEN_BUILD_VERSION: main
+  BUILD_USER: apache
+  BUILD_CHANNEL: ci
+  CI_NUM_THREADS: 8
+  NPROC: 8
+  CONAN_HOME: ${{ github.workspace }}/.conan
+  CONAN_HOME2: ${{ github.workspace }}/.conan2
+  MAVEN_REPO_LOCAL: ${{ github.workspace }}/.m2/repository
+
+concurrency:
+  group: ${{ github.repository }}-${{ github.head_ref || github.sha }}-${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  build-native-and-arrow:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java 11
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '11'
+          cache: maven
+
+      - name: Install build dependencies
+        run: |
+          set -eux
+          sudo apt-get update
+          sudo apt-get install -y \
+            git \
+            python3-pip \
+            ninja-build \
+            cmake \
+            make \
+            g++ \
+            pkg-config \
+            autoconf \
+            automake \
+            libtool \
+            perl \
+            wget \
+            curl \
+            unzip \
+            maven
+
+      - name: Restore Conan caches
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ${{ env.CONAN_HOME }}
+            ${{ env.CONAN_HOME2 }}
+          key: conan-bolt-${{ runner.os }}-${{ hashFiles('cpp/conanfile.py', 'cpp/CMakeLists.txt', 'Makefile') }}
+          restore-keys: |
+            conan-bolt-${{ runner.os }}-
+
+      - name: Install Conan
+        run: |
+          set -eux
+          python3 -m pip install --upgrade pip
+          python3 -m pip install --upgrade "conan>=2.0.0" pydot
+          conan --version
+
+      - name: Configure Conan home
+        run: |
+          set -eux
+          mkdir -p "${CONAN_HOME}" "${CONAN_HOME2}"
+          echo "CONAN_HOME=${CONAN_HOME2}" >> $GITHUB_ENV
+          conan profile detect --force
+
+      - name: Install Bolt recipe
+        run: |
+          set -eux
+          make bolt-recipe BOLT_BUILD_VERSION=${BOLT_BUILD_VERSION}
+
+      - name: Build native lib (Release) and run C++ unit tests
+        run: |
+          set -eux
+          make cpp-test-release \
+            CI_NUM_THREADS=${CI_NUM_THREADS} \
+            GLUTEN_BUILD_VERSION=${GLUTEN_BUILD_VERSION} \
+            BOLT_BUILD_VERSION=${BOLT_BUILD_VERSION}
+
+      - name: Upload C++ unit test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bolt-cpp-ut-logs-${{ github.sha }}
+          path: |
+            cpp/build/Release/Testing/**
+            cpp/build/Release/**/CTestTestfile.cmake
+          if-no-files-found: ignore
+
+      - name: Build Arrow Java artifacts into local Maven repo
+        env:
+          MAVEN_OPTS: -Dmaven.repo.local=${{ env.MAVEN_REPO_LOCAL }}
+        run: |
+          set -eux
+          mkdir -p "${MAVEN_REPO_LOCAL}"
+          make arrow
+
+      - name: Save Conan caches
+        uses: actions/cache/save@v4
+        if: ${{ always() }}
+        with:
+          path: |
+            ${{ env.CONAN_HOME }}
+            ${{ env.CONAN_HOME2 }}
+          key: conan-bolt-${{ runner.os }}-${{ hashFiles('cpp/conanfile.py', 'cpp/CMakeLists.txt', 'Makefile') }}
+
+      - name: Upload native libs
+        uses: actions/upload-artifact@v4
+        with:
+          name: bolt-native-lib-${{ github.sha }}
+          path: ./cpp/build/releases/
+          if-no-files-found: error
+
+      - name: Upload Arrow Maven repo artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: bolt-arrow-m2-${{ github.sha }}
+          path: ./.m2/repository/org/apache/arrow/
+          if-no-files-found: error
+
+  build-and-test-java:
+    needs: build-native-and-arrow
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: spark-3.2
+            make_target: test
+          - name: spark-3.5
+            make_target: test_spark35
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java 11
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '11'
+          cache: maven
+
+      - name: Download native libs
+        uses: actions/download-artifact@v4
+        with:
+          name: bolt-native-lib-${{ github.sha }}
+          path: ./cpp/build/releases/
+
+      - name: Download Arrow Maven repo artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: bolt-arrow-m2-${{ github.sha }}
+          path: ./.m2/repository/org/apache/arrow/
+
+      - name: Run Maven build & tests (${{ matrix.name }})
+        env:
+          MAVEN_OPTS: -Dmaven.repo.local=${{ env.MAVEN_REPO_LOCAL }}
+          LD_LIBRARY_PATH: ${{ github.workspace }}/cpp/build/releases:${{ env.LD_LIBRARY_PATH }}
+        run: |
+          set -eux
+          make ${{ matrix.make_target }}
+
+      - name: Upload JVM test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bolt-${{ matrix.name }}-jvm-ut-report-${{ github.sha }}
+          path: '**/surefire-reports/TEST-*.xml'
+          if-no-files-found: ignore
+
+      - name: Upload JVM unit tests log files
+        if: ${{ !success() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: bolt-${{ matrix.name }}-jvm-ut-log-${{ github.sha }}
+          path: |
+            **/target/*.log
+            **/gluten-ut/**/hs_err_*.log
+            **/gluten-ut/**/core.*
+          if-no-files-found: ignore
+
+  scala-ut:
+    name: Scala UT (spark-ut, Spark 3.5)
+    needs: build-native-and-arrow
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java 11
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '11'
+          cache: maven
+
+      - name: Install test dependencies
+        run: |
+          set -eux
+          sudo apt-get update
+          sudo apt-get install -y wget perl
+
+      - name: Download native libs
+        uses: actions/download-artifact@v4
+        with:
+          name: bolt-native-lib-${{ github.sha }}
+          path: ./cpp/build/releases/
+
+      - name: Download Arrow Maven repo artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: bolt-arrow-m2-${{ github.sha }}
+          path: ./.m2/repository/org/apache/arrow/
+
+      - name: Prepare Spark resources for Spark 3.5
+        run: |
+          set -eux
+          sudo rm -rf /opt/shims/spark35 || true
+          sudo bash .github/workflows/util/install_spark_resources.sh 3.5 /opt
+
+      - name: Run Scala unit tests (spark-ut)
+        env:
+          MAVEN_OPTS: -Dmaven.repo.local=${{ env.MAVEN_REPO_LOCAL }}
+          LD_LIBRARY_PATH: ${{ github.workspace }}/cpp/build/releases:${{ env.LD_LIBRARY_PATH }}
+        run: |
+          set -eux
+          make scala-ut-spark35 SPARK_TEST_HOME=/opt/shims/spark35/spark_home/
+
+      - name: Upload Scala test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bolt-scala-ut-report-${{ github.sha }}
+          path: '**/surefire-reports/TEST-*.xml'
+          if-no-files-found: ignore
+
+      - name: Upload Scala unit tests log files
+        if: ${{ !success() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: bolt-scala-ut-log-${{ github.sha }}
+          path: |
+            **/target/*.log
+            **/gluten-ut/**/hs_err_*.log
+            **/gluten-ut/**/core.*
+          if-no-files-found: ignore
