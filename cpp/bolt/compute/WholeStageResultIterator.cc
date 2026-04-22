@@ -20,18 +20,20 @@
 #include <bolt/connectors/hive/PaimonConstants.h>
 #include <cstdint>
 #include <memory>
-#include "BoltBackend.h"
-#include "BoltRuntime.h"
-#include "config/BoltConfig.h"
-#include "memory/BoltMemoryManager.h"
-#include "memory/BoltGlutenMemoryManager.h"
 #include "bolt/connectors/hive/HiveConfig.h"
 #include "bolt/connectors/hive/HiveConnectorSplit.h"
+#include "bolt/connectors/paimon/PaimonConfig.h"
 #include "bolt/exec/PlanNodeStats.h"
 #include "bolt/shuffle/sparksql/ShuffleWriterNode.h"
 #include "connectors/hive/PaimonConnectorSplit.h"
 #include "connectors/paimon/PaimonConnectorSplit.h"
 #include "compute/paimon/PaimonPlanUtils.h"
+#include "compute/Runtime.h"
+#include "config/BoltConfig.h"
+#include "connectors/hive/storage_adapters/hdfs/HdfsFileSystem.h"
+#include "memory/BoltGlutenMemoryManager.h"
+#include "memory/BoltMemoryManager.h"
+#include "bolt/shuffle/sparksql/ShuffleReaderNode.h"
 
 #ifdef GLUTEN_ENABLE_GPU
 #include <cudf/io/types.hpp>
@@ -1024,6 +1026,39 @@ std::shared_ptr<bolt::config::ConfigBase> WholeStageResultIterator::createConnec
       std::to_string(boltCfg_->get<bool>(kParquetUseColumnNames, true));
   configs[bolt::connector::hive::HiveConfig::kOrcUseColumnNamesSession] =
         std::to_string(boltCfg_->get<bool>(kOrcUseColumnNames, true));
+
+  // Map Spark Paimon configs to Bolt Paimon connector config keys.
+  if (auto val = boltCfg_->get<std::string>("spark.gluten.paimon.read.batch-size")) {
+    configs[bolt::connector::paimon::PaimonConfig::kReadBatchSize] = val.value();
+  }
+  if (auto val = boltCfg_->get<std::string>("spark.gluten.paimon.read.multi-thread-row-to-batch")) {
+    configs[bolt::connector::paimon::PaimonConfig::kMultiThreadRowToBatch] = val.value();
+  }
+  if (auto val = boltCfg_->get<std::string>("spark.gluten.paimon.read.row-to-batch-thread-num")) {
+    configs[bolt::connector::paimon::PaimonConfig::kRowToBatchThreadNum] = val.value();
+  }
+  if (auto val = boltCfg_->get<std::string>("spark.gluten.paimon.read.prefetch-enabled")) {
+    configs[bolt::connector::paimon::PaimonConfig::kPrefetchEnabled] = val.value();
+  }
+  if (auto val = boltCfg_->get<std::string>("spark.gluten.paimon.read.prefetch-batch-count")) {
+    configs[bolt::connector::paimon::PaimonConfig::kPrefetchBatchCount] = val.value();
+  }
+  if (auto val = boltCfg_->get<std::string>("spark.gluten.paimon.read.prefetch-max-parallel")) {
+    configs[bolt::connector::paimon::PaimonConfig::kPrefetchMaxParallel] = val.value();
+  }
+  if (auto val = boltCfg_->get<std::string>("spark.gluten.paimon.read.predicate-filter-enabled")) {
+    configs[bolt::connector::paimon::PaimonConfig::kPredicateFilterEnabled] = val.value();
+  }
+  if (auto val = boltCfg_->get<std::string>("spark.gluten.paimon.io.natural-read-size")) {
+    configs[bolt::connector::paimon::PaimonConfig::kNaturalReadSize] = val.value();
+  }
+  if (auto val = boltCfg_->get<std::string>("spark.gluten.paimon.io.coalesce-reads")) {
+    configs[bolt::connector::paimon::PaimonConfig::kCoalesceReads] = val.value();
+  }
+  if (auto val = boltCfg_->get<std::string>("spark.gluten.paimon.read.timestamp-unit")) {
+    configs[bolt::connector::paimon::PaimonConfig::kReadTimestampUnit] = val.value();
+  }
+
   return std::make_shared<bolt::config::ConfigBase>(std::move(configs));
 }
 

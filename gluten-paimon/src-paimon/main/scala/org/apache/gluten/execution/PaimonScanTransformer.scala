@@ -153,12 +153,11 @@ abstract class AbstractPaimonScanTransformer(
     val paimonScan = scan.asInstanceOf[PaimonScan]
     val primaryKeys = paimonScan.table.primaryKeys()
     val useNativePaimonSplits = AbstractPaimonScanTransformer.canUseNativePaimonConnector(scan)
+    val connectorChoice = AbstractPaimonScanTransformer.resolveConnectorChoice(scan)
 
-    if (useNativePaimonSplits) {
-      log.info(s"Using native Paimon connector (serialized splits) for scan: $scan")
-    } else {
-      log.info(s"Using Hive connector fallback for Paimon scan: $scan")
-    }
+    log.info(
+      s"Paimon scan: $scan, connector=$connectorChoice, " +
+        s"nativeSplits=$useNativePaimonSplits")
 
     val partitionComputer = scan match {
       case paimonScan: PaimonScan => shim.getInternalPartitionComputer(paimonScan)
@@ -332,45 +331,69 @@ abstract class AbstractPaimonScanTransformer(
 object AbstractPaimonScanTransformer {
 
   /**
-   * Determines whether the native Paimon C++ connector can be used for the given scan. Returns
-   * false (forcing Hive-fallback) when any of these conditions hold:
-   *   - The native split feature is disabled via config
-   *   - The read schema contains Paimon metadata columns (_ROW_ID, _SEQUENCE_NUMBER, etc.)
-   *   - The read schema contains CHAR-typed columns (not supported by paimon-cpp)
+   * Determines whether the native Paimon C++ connector can be used for the given scan.
    *
-   * This single source of truth must be used by both:
-   *   - PaimonScanTransformer.getSplitInfosFromPartitions() — to choose split serialization
-   *   - BoltPaimonComponent.getAdvancedExtension() — to set use_native_paimon_connector proto flag
+   * Two-level decision:
+   *   1. Global gate: spark.gluten.paimon.native.split.enabled must be true
+   *      (PAIMON_NATIVE_SPLIT_ENABLED / PAIMON_NATIVE_SOURCE_ENABLED) 2. Per-scan connector
+   *      selection via spark.gluten.paimon.native.connector:
+   *      - "auto" → automatic detection (metadata cols, char type, agg funcs)
+   *      - "paimon" → force native C++ connector (skip auto-detection)
+   *      - "hive" → force Hive-fallback connector
+   *
+   * This single source of truth is used by both:
+   *   - PaimonScanTransformer.getSplitInfosFromPartitions() — split serialization choice
+   *   - BoltPaimonComponent.getAdvancedExtension() — proto flag for C++
    */
   def canUseNativePaimonConnector(scan: Scan): Boolean = {
-    var useHiveSplit = true
-    if (SQLConf.get.getConf(PaimonConfig.PAIMON_NATIVE_SPLIT_ENABLED)) {
-      useHiveSplit = false
+    resolveConnectorChoice(scan) == PaimonConfig.NativeConnectorChoice.Paimon
+  }
+
+  /** Resolves the connector choice, validating config and running auto-detection if needed. */
+  def resolveConnectorChoice(scan: Scan): PaimonConfig.NativeConnectorChoice.Value = {
+    // Level 1: Global gate — is Paimon native source enabled at all?
+    if (!SQLConf.get.getConf(PaimonConfig.PAIMON_NATIVE_SOURCE_ENABLED)) {
+      return PaimonConfig.NativeConnectorChoice.Hive
     }
-    val schemaHasMetadataCols = scan
-      .readSchema()
-      .fields
-      .exists(f => SUPPORTED_METADATA_COLUMNS.contains(f.name))
-    // Paimon C++ connector does not support CHAR-typed columns.
-    val schemaHasCharType = scan
-      .readSchema()
-      .fields
-      .exists(_.dataType.isInstanceOf[org.apache.spark.sql.types.CharType])
-    // Paimon C++ connector does not support count, product, or listagg aggregate
-    // functions on aggregation merge engine tables. These are configured as table
-    // properties like 'fields.<col>.aggregate-function' = 'product'.
-    val usesUnsupportedAggFunc = scan match {
-      case paimonScan: PaimonScan =>
-        val props = new CoreOptions(paimonScan.table.options()).toMap.asScala
-        val unsupportedFuncs = Set("count", "product", "listagg")
-        props.exists {
-          case (key, value) =>
-            key.startsWith("fields.") && key.endsWith(".aggregate-function") &&
-            unsupportedFuncs.contains(value.toLowerCase)
+
+    // Level 2: Per-scan connector selection (validated parse)
+    val choice = PaimonConfig.NativeConnectorChoice.fromString(
+      SQLConf.get.getConf(PaimonConfig.PAIMON_NATIVE_CONNECTOR))
+
+    choice match {
+      case PaimonConfig.NativeConnectorChoice.Paimon =>
+        // Force native — user takes responsibility for compatibility
+        PaimonConfig.NativeConnectorChoice.Paimon
+      case PaimonConfig.NativeConnectorChoice.Hive =>
+        // Force hive fallback
+        PaimonConfig.NativeConnectorChoice.Hive
+      case PaimonConfig.NativeConnectorChoice.Auto =>
+        // Auto-detect based on schema and table properties
+        val schemaHasMetadataCols = scan
+          .readSchema()
+          .fields
+          .exists(f => SUPPORTED_METADATA_COLUMNS.contains(f.name))
+        val schemaHasCharType = scan
+          .readSchema()
+          .fields
+          .exists(_.dataType.isInstanceOf[org.apache.spark.sql.types.CharType])
+        val usesUnsupportedAggFunc = scan match {
+          case paimonScan: PaimonScan =>
+            val props = new CoreOptions(paimonScan.table.options()).toMap.asScala
+            val unsupportedFuncs = Set("count", "product", "listagg")
+            props.exists {
+              case (key, value) =>
+                key.startsWith("fields.") && key.endsWith(".aggregate-function") &&
+                unsupportedFuncs.contains(value.toLowerCase)
+            }
+          case _ => false
         }
-      case _ => false
+        if (!schemaHasMetadataCols && !schemaHasCharType && !usesUnsupportedAggFunc) {
+          PaimonConfig.NativeConnectorChoice.Paimon
+        } else {
+          PaimonConfig.NativeConnectorChoice.Hive
+        }
     }
-    !useHiveSplit && !schemaHasMetadataCols && !schemaHasCharType && !usesUnsupportedAggFunc
   }
 
   def apply(batchScan: BatchScanExec): PaimonScanTransformer = {

@@ -26,6 +26,8 @@ import org.apache.spark.sql.Row
 import org.apache.spark.sql.functions.{col, concat, lit}
 import org.apache.spark.sql.types.{DecimalType, DoubleType, FloatType, IntegerType, LongType, StructType}
 
+import org.apache.paimon.spark.source.PaimonConfig
+
 import scala.reflect.ClassTag
 import scala.util.Random
 
@@ -2419,6 +2421,88 @@ class BoltPaimonSuite extends WholeStageTransformerSuite {
       // Verify the native Paimon connector was actually used (not Hive fallback)
       checkOperatorMatch[BoltPaimonScanTransformer](
         spark.sql(s"SELECT * FROM $tbl_name WHERE id < 5"))
+    }
+  }
+
+  test("paimon native connector: runtime config selection via SET") {
+    val tbl_name = s"paimon_tb"
+
+    withTable(tbl_name) {
+      // Create table without primary key (append-only) so auto-detection picks native.
+      spark.sql(s"""
+                   |create table $tbl_name (id INT, name STRING, value DOUBLE)
+                   |using paimon
+                   |TBLPROPERTIES (
+                   |'file.format' = 'parquet'
+                   |)""".stripMargin)
+
+      // Insert 10 rows.
+      spark.sql(
+        (1 to 10)
+          .map(i => s"($i, 'name_$i', ${i * 1.0})")
+          .mkString(s"INSERT INTO $tbl_name VALUES ", ",", ""))
+
+      def countAll(): Long =
+        spark.sql(s"SELECT COUNT(*) as cnt FROM $tbl_name").collect().head.getLong(0)
+
+      def queryIds(whereClause: String): Seq[Int] =
+        spark
+          .sql(s"SELECT id FROM $tbl_name WHERE $whereClause ORDER BY id")
+          .collect()
+          .map(_.getInt(0))
+          .toSeq
+
+      // --- Default: auto mode should select native connector ---
+      assert(countAll() == 10L, "Default (auto) should return all rows")
+      checkOperatorMatch[BoltPaimonScanTransformer](spark.sql(s"SELECT * FROM $tbl_name"))
+
+      // --- Force Hive fallback via per-query SET ---
+      spark.conf.set(PaimonConfig.PAIMON_NATIVE_CONNECTOR.key, "hive")
+      val hiveRows = spark
+        .sql(
+          s"SELECT COUNT(*) as cnt FROM $tbl_name"
+        )
+        .collect()
+      assert(hiveRows.head.getLong(0) == 10L, "Forced hive connector should return all rows")
+
+      // --- Force native paimon via per-query SET ---
+      spark.conf.set(PaimonConfig.PAIMON_NATIVE_CONNECTOR.key, "paimon")
+      val paimonRows = spark
+        .sql(
+          s"SELECT COUNT(*) as cnt FROM $tbl_name"
+        )
+        .collect()
+      assert(paimonRows.head.getLong(0) == 10L, "Forced paimon connector should return all rows")
+
+      // --- Verify forced hive produces correct filtered results (per-query SET) ---
+      spark.conf.set(PaimonConfig.PAIMON_NATIVE_CONNECTOR.key, "hive")
+      val hiveFiltered = spark
+        .sql(
+          s"SELECT id FROM $tbl_name WHERE id <= 3 ORDER BY id"
+        )
+        .collect()
+      assert(
+        hiveFiltered.map(_.getInt(0)).toSeq == (1 to 3),
+        "Forced hive: filter results must match [1,2,3]")
+
+      // --- Verify forced paimon produces correct filtered results (per-query SET) ---
+      spark.conf.set(PaimonConfig.PAIMON_NATIVE_CONNECTOR.key, "paimon")
+      val paimonFiltered = spark
+        .sql(
+          s"SELECT id FROM $tbl_name WHERE id >= 7 ORDER BY id"
+        )
+        .collect()
+      assert(
+        paimonFiltered.map(_.getInt(0)).toSeq == (7 to 10),
+        "Forced paimon: filter results must match [7,8,9,10]")
+
+      // --- Verify batch-size config is plumbed through (doesn't break results) ---
+      spark.conf.set(PaimonConfig.PAIMON_NATIVE_CONNECTOR.key, "paimon")
+      spark.conf.set(PaimonConfig.PAIMON_READ_BATCH_SIZE.key, "1024")
+      spark.sql(
+        s"SELECT COUNT(*) as cnt FROM $tbl_name"
+      )
+      assert(countAll() == 10L, "Custom batch-size should not affect result correctness")
     }
   }
 }
