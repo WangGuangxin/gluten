@@ -182,8 +182,21 @@ abstract class AbstractPaimonScanTransformer(
                 if (!split.beforeFiles().isEmpty) {
                   throw new UnsupportedOperationException("Do not support before files")
                 }
-                val partitionRow =
+                val rawPartRow =
                   partitionComputer.generatePartValues(shim.getSplitPartition(split))
+                // generatePartValues() converts NULL partitions to Paimon's
+                // configurable default-partition-name (e.g. "__DEFAULT_PARTITION__").
+                // Replace with "\N" (Hive's standard null literal) so that C++
+                // SplitReader.isHiveNull() recognises it and produces SQL NULL —
+                // matching what the native Paimon connector correctly returns.
+                val partitionRow = rawPartRow.asScala.map {
+                  case (k, v) =>
+                    if (v != null && v.contains(paimonScan.coreOptions.partitionDefaultName())) {
+                      (k, "\\N")
+                    } else {
+                      (k, v)
+                    }
+                }.asJava
                 val fileMetas = split.dataFiles().asScala
                 // zipping should associate the correct file metadata as rawFiles uses dataFiles() as the stream
                 // source when computing the RawFiles list.

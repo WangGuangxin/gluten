@@ -27,7 +27,7 @@ class PaimonSparkShimImpl extends PaimonSparkShim {
   override def getInternalPartitionComputer(paimonScan: PaimonScan): InternalRowPartitionComputer = {
     val table = paimonScan.table.asInstanceOf[FileStoreTable]
     new InternalRowPartitionComputer(
-      ExternalCatalogUtils.DEFAULT_PARTITION_NAME, // use __HIVE_DEFAULT_PARTITION__ because velox uses this
+      paimonScan.coreOptions.partitionDefaultName(),
       table.schema().logicalPartitionType(),
       table.partitionKeys.asScala.toArray,
       false)

@@ -7,7 +7,6 @@ import org.apache.paimon.table.FileStoreTable
 import org.apache.paimon.table.source.{ChainDataSplit, DataSplit}
 import org.apache.paimon.types.{DateType, RowType}
 import org.apache.paimon.utils.InternalRowPartitionComputer
-import org.apache.spark.sql.catalyst.catalog.ExternalCatalogUtils
 import org.apache.spark.sql.catalyst.util.DateFormatter
 
 import java.util
@@ -42,15 +41,16 @@ class PaimonSparkShimImpl extends PaimonSparkShim {
   override def getInternalPartitionComputer(paimonScan: PaimonScan): InternalRowPartitionComputer = {
     val table = paimonScan.table.asInstanceOf[FileStoreTable]
     PaimonPartitionComputer(
+      paimonScan,
       table.schema().logicalPartitionType(),
       table.partitionKeys.asScala.toArray
     )
   }
 }
 
-case class PaimonPartitionComputer(paimonRowType: RowType, paimonPartitionKeys: Array[String])
+case class PaimonPartitionComputer(paimonScan: PaimonScan, paimonRowType: RowType, paimonPartitionKeys: Array[String])
   extends InternalRowPartitionComputer(
-    ExternalCatalogUtils.DEFAULT_PARTITION_NAME, // use __HIVE_DEFAULT_PARTITION__ because velox using this
+    paimonScan.coreOptions.partitionDefaultName(),
     paimonRowType,
     paimonPartitionKeys,
     false) {

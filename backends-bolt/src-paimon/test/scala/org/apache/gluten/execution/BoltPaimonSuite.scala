@@ -2505,6 +2505,75 @@ class BoltPaimonSuite extends WholeStageTransformerSuite {
       assert(countAll() == 10L, "Custom batch-size should not affect result correctness")
     }
   }
+
+  test("paimon native scan: NULL partitions return default sentinel value") {
+    val tbl = "paimon_null_partition_tb"
+
+    withTable(tbl) {
+      spark.sql(s"""
+                   |CREATE TABLE $tbl (
+                   |  id INT,
+                   |  val DOUBLE,
+                   |  p1 STRING,
+                   |  p2 STRING
+                   |)
+                   |USING paimon
+                   |PARTITIONED BY (p1, p2)
+                   |TBLPROPERTIES (
+                   |  'file.format' = 'parquet',
+                   |  'primary_key' = 'id'
+                   |)
+                   |""".stripMargin)
+
+      // Insert rows covering all NULL partition combinations.
+      spark.sql(s"INSERT INTO $tbl VALUES (1, 1.0, 'sysA', 'b1')") // both present
+      spark.sql(s"INSERT INTO $tbl VALUES (2, 2.0, NULL, 'b1')") // p1 NULL
+      spark.sql(s"INSERT INTO $tbl VALUES (3, 3.0, 'sysB', NULL)") // p2 NULL
+      spark.sql(s"INSERT INTO $tbl VALUES (4, 4.0, NULL, NULL)") // both NULL
+
+      // Both hive and paimon connectors should return NULL for NULL partitions.
+      for (connector <- Seq("hive", "paimon")) {
+        spark.conf.set(PaimonConfig.PAIMON_NATIVE_SOURCE_ENABLED.key, "true")
+        spark.conf.set(PaimonConfig.PAIMON_NATIVE_CONNECTOR.key, connector)
+
+        val rows = spark
+          .sql(
+            s"SELECT id, p1, p2 FROM $tbl ORDER BY id"
+          )
+          .collect()
+
+        assert(rows.length == 4, s"[$connector] Expected 4 rows, got ${rows.length}")
+
+        // Row 1: both partitions present.
+        assert(rows(0).getInt(0) == 1)
+        assert(rows(0).getString(1) == "sysA")
+        assert(rows(0).getString(2) == "b1")
+
+        // Row 2: p1 NULL → NULL.
+        assert(rows(1).getInt(0) == 2)
+        assert(
+          rows(1).isNullAt(1),
+          s"[$connector] Expected NULL for p1, got '${rows(1).getString(1)}'")
+        assert(rows(1).getString(2) == "b1")
+
+        // Row 3: p2 NULL → NULL.
+        assert(rows(2).getInt(0) == 3)
+        assert(rows(2).getString(1) == "sysB")
+        assert(
+          rows(2).isNullAt(2),
+          s"[$connector] Expected NULL for p2, got '${rows(2).getString(2)}'")
+
+        // Row 4: both NULL → both NULL.
+        assert(rows(3).getInt(0) == 4)
+        assert(
+          rows(3).isNullAt(1),
+          s"[$connector] Expected NULL for p1, got '${rows(3).getString(1)}'")
+        assert(
+          rows(3).isNullAt(2),
+          s"[$connector] Expected NULL for p2, got '${rows(3).getString(2)}'")
+      }
+    }
+  }
 }
 
 class DisableNativeSource extends WholeStageTransformerSuite {
