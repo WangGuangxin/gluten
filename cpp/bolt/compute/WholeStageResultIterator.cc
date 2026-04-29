@@ -556,7 +556,7 @@ void WholeStageResultIterator::getOrderedNodeIds(
   }
   // SparkShuffleWriterNode's metrics will be report by ShuffleWriterResult so it does not contains in stats
   if (std::dynamic_pointer_cast<const bytedance::bolt::shuffle::sparksql::SparkShuffleWriterNode>(planNode) !=
-      nullptr || std::dynamic_pointer_cast<const bytedance::bolt::shuffle::sparksql::SparkShuffleReaderNode>(planNode) != nullptr) {
+      nullptr) {
     omittedNodeIds_.insert(planNode->id());
   } else {
     nodeIds.emplace_back(planNode->id());
