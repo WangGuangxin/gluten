@@ -30,6 +30,10 @@ import org.apache.spark.sql.execution.adaptive.{AQEShuffleReadExec, ShuffleQuery
  */
 case class AppendBatchResizeForShuffleInputAndOutput() extends Rule[SparkPlan] {
   override def apply(plan: SparkPlan): SparkPlan = {
+    if (BoltConfig.get.shuffleInsideBolt) {
+      // BoltResizeBatchesExec before shuffle writer would stop shuffle offload.
+      return plan
+    }
     val range = BoltConfig.get.boltResizeBatchesShuffleInputOutputRange
     plan.transformUp {
       case shuffle: ColumnarShuffleExchangeExec
