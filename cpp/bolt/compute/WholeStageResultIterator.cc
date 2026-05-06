@@ -20,6 +20,8 @@
 #include <bolt/connectors/hive/PaimonConstants.h>
 #include <cstdint>
 #include <memory>
+#include "BoltBackend.h"
+#include "BoltRuntime.h"
 #include "bolt/connectors/hive/HiveConfig.h"
 #include "bolt/connectors/hive/HiveConnectorSplit.h"
 #include "bolt/connectors/paimon/PaimonConfig.h"
@@ -29,6 +31,7 @@
 #include "connectors/paimon/PaimonConnectorSplit.h"
 #include "compute/paimon/PaimonPlanUtils.h"
 #include "compute/Runtime.h"
+#include "compute/paimon/PaimonPlanUtils.h"
 #include "config/BoltConfig.h"
 #include "connectors/hive/storage_adapters/hdfs/HdfsFileSystem.h"
 #include "memory/BoltGlutenMemoryManager.h"

@@ -88,6 +88,8 @@ class BoltPaimonSuite extends WholeStageTransformerSuite {
     spark.sql(s"USE paimon")
     spark.sql(s"USE paimon.$dbName0")
     spark.sql(s"DROP TABLE IF EXISTS $tableName0")
+    spark.conf.set(PaimonConfig.PAIMON_NATIVE_SOURCE_ENABLED.key, "true")
+    spark.conf.set(PaimonConfig.PAIMON_NATIVE_CONNECTOR.key, "auto")
   }
 
   /**
@@ -2571,6 +2573,92 @@ class BoltPaimonSuite extends WholeStageTransformerSuite {
         assert(
           rows(3).isNullAt(2),
           s"[$connector] Expected NULL for p2, got '${rows(3).getString(2)}'")
+      }
+    }
+  }
+  ignore("paimon scan: timestamp values are consistent across connectors") {
+    val tbl = "paimon_timestamp_tb"
+    withTable(tbl) {
+      spark.sql(s"""
+                   |CREATE TABLE $tbl (
+                   |  id INT,
+                   |  ts TIMESTAMP,
+                   |  dt DATE,
+                   |  p1 STRING
+                   |)
+                   |USING paimon
+                   |PARTITIONED BY (p1)
+                   |TBLPROPERTIES (
+                   |  'file.format' = 'parquet',
+                   |  'primary_key' = 'id'
+                   |)
+                   |""".stripMargin)
+
+      // Insert rows with various timestamp/date values including edge cases.
+      spark.sql(
+        s"INSERT INTO $tbl VALUES (1, TIMESTAMP '2024-01-15 10:30:45', DATE '2024-01-15', 'a')"
+      )
+      spark.sql(
+        s"INSERT INTO $tbl VALUES (2, TIMESTAMP '2020-12-31 23:59:59.999999', DATE '2020-12-31', 'a')"
+      )
+      spark.sql(
+        s"INSERT INTO $tbl VALUES (3, TIMESTAMP '1970-01-01 00:00:00', DATE '1970-01-01', 'b')"
+      )
+      spark.sql(s"INSERT INTO $tbl VALUES (4, NULL, NULL, 'b')")
+
+      // --- Java Paimon (source of truth) — disable native source to use vanilla Paimon ---
+      spark.conf.set(PaimonConfig.PAIMON_NATIVE_SOURCE_ENABLED.key, "false")
+      val javaRows = spark
+        .sql(
+          // Read raw timestamp/date values without CAST/string-specific timestamp functions.
+          s"SELECT id, ts, dt, p1 FROM $tbl ORDER BY id"
+        )
+        .queryExecution
+        .toRdd
+        .collect()
+      assert(javaRows.length == 4, s"[java] Expected 4 rows, got ${javaRows.length}")
+
+      def toComparableRows(rows: Array[org.apache.spark.sql.catalyst.InternalRow]): Seq[Row] = {
+        rows.toSeq.map {
+          r =>
+            Row(
+              r.getInt(0),
+              if (r.isNullAt(1)) null else r.getLong(1): java.lang.Long,
+              if (r.isNullAt(2)) null else r.getInt(2): java.lang.Integer,
+              if (r.isNullAt(3)) null else r.getUTF8String(3).toString
+            )
+        }
+      }
+
+      def assertComparableRowsEqual(
+          expected: Seq[Row],
+          actual: Seq[Row],
+          connector: String): Unit = {
+        val expectedValues = expected.map(_.toSeq)
+        val actualValues = actual.map(_.toSeq)
+        assert(
+          expectedValues == actualValues,
+          s"[$connector] raw row mismatch\n" +
+            s"expected: ${expectedValues.mkString("[", ", ", "]")}\n" +
+            s"actual: ${actualValues.mkString("[", ", ", "]")}"
+        )
+      }
+
+      val expected = toComparableRows(javaRows)
+
+      // --- Compare Hive fallback and Native Paimon against Java ground truth ---
+      for (connector <- Seq("hive", "paimon")) {
+        spark.conf.set(PaimonConfig.PAIMON_NATIVE_SOURCE_ENABLED.key, "true")
+        spark.conf.set(PaimonConfig.PAIMON_NATIVE_CONNECTOR.key, connector)
+
+        val actual = spark
+          .sql(s"SELECT id, ts, dt, p1 FROM $tbl ORDER BY id")
+          .queryExecution
+          .toRdd
+          .collect()
+        val actualRows = toComparableRows(actual)
+
+        assertComparableRowsEqual(expected, actualRows, connector)
       }
     }
   }
