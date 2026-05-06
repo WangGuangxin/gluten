@@ -60,6 +60,13 @@ std::shared_ptr<PaimonSplitInfo> PaimonPlanUtils::parsePaimonSplitInfo(
   }
 
   existing->metaByPath_[path] = fileMeta;
+
+  // Parse serialized Paimon split if present (native connector path).
+  // Each FileOrFiles may carry one serialized split; collect all of them.
+  if (paimonReadOption.serialized_split().size() > 0) {
+    existing->serializedPaimonSplits_.push_back(paimonReadOption.serialized_split());
+  }
+
   return existing;
 }
 

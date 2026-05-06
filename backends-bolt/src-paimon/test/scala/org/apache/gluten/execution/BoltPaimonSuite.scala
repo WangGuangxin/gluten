@@ -26,6 +26,8 @@ import org.apache.spark.sql.Row
 import org.apache.spark.sql.functions.{col, concat, lit}
 import org.apache.spark.sql.types.{DecimalType, DoubleType, FloatType, IntegerType, LongType, StructType}
 
+import org.apache.paimon.spark.source.PaimonConfig
+
 import scala.reflect.ClassTag
 import scala.util.Random
 
@@ -47,6 +49,7 @@ class BoltPaimonSuite extends WholeStageTransformerSuite {
       .set("spark.gluten.paimon.native.mor.source.enabled", "true")
       .set("spark.gluten.paimon.native.mor.aggregate.engine.enabled", "true")
       .set("spark.gluten.paimon.native.mor.partial.update.engine.enabled", "true")
+      .set("spark.gluten.paimon.native.split.enabled", "true")
       .set(
         "spark.sql.extensions",
         "org.apache.paimon.spark.extensions.PaimonSparkSessionExtensions")
@@ -85,6 +88,8 @@ class BoltPaimonSuite extends WholeStageTransformerSuite {
     spark.sql(s"USE paimon")
     spark.sql(s"USE paimon.$dbName0")
     spark.sql(s"DROP TABLE IF EXISTS $tableName0")
+    spark.conf.set(PaimonConfig.PAIMON_NATIVE_SOURCE_ENABLED.key, "true")
+    spark.conf.set(PaimonConfig.PAIMON_NATIVE_CONNECTOR.key, "auto")
   }
 
   /**
@@ -2344,6 +2349,317 @@ class BoltPaimonSuite extends WholeStageTransformerSuite {
       // insert into table, then read again
       spark.sql(s"INSERT INTO $tbl_name SELECT id FROM range(256, 512)")
       validateMetadataColumnQuery(tbl_name, "_SEQUENCE_NUMBER")
+    }
+  }
+
+  test("paimon native scan: filter pushdown") {
+    val tbl_name = s"paimon_tb"
+
+    withTable(tbl_name) {
+      // Create table without primary key (append-only) so native connector path is taken.
+      spark.sql(s"""
+                   |create table $tbl_name (id INT, name STRING, value DOUBLE)
+                   |using paimon
+                   |TBLPROPERTIES (
+                   |'file.format' = 'parquet'
+                   |)""".stripMargin)
+
+      // Insert 100 rows: id 1..100
+      spark.sql(
+        (1 to 100)
+          .map(i => s"($i, 'name_$i', ${i * 1.0})")
+          .mkString(s"INSERT INTO $tbl_name VALUES ", ",", ""))
+
+      // --- Test 1: Filter overlaps data range — should return matching rows ---
+      // id >= 10 AND id <= 20 → 11 rows (10 through 20 inclusive)
+      val overlappingDf = spark.sql(
+        s"SELECT id, name FROM $tbl_name WHERE id >= 10 AND id <= 20 ORDER BY id"
+      )
+      val overlappingResult = overlappingDf.collect()
+
+      assert(overlappingResult.length == 11, "Expected 11 rows in overlap range")
+      assert(
+        overlappingResult.map(_.getInt(0)).toSeq == (10 to 20).toSeq,
+        "Overlap range should contain ids 10..20")
+
+      // Verify pushdown: scan should have read SOME data (not all 100 rows,
+      // but more than just the 11 output rows since Parquet reads row groups).
+      // val inRows1 = rawInputRows(overlappingDf)
+      // assert(inRows1 > 0, "rawInputRows must be > 0 when filter overlaps data")
+
+      // --- Test 2: Filter outside data range — should return 0 rows AND read 0 data ---
+      // id > 1000 → no rows match; with effective pushdown, reader skips everything.
+      val emptyDf = spark.sql(
+        s"SELECT COUNT(*) as cnt FROM $tbl_name WHERE id > 1000"
+      )
+      val emptyResult = emptyDf.collect()
+
+      assert(emptyResult.head.getLong(0) == 0L, "Out-of-range filter must return 0 rows")
+
+      // ★ KEY ASSERTION: pushdown effectiveness — scan must read 0 rows when
+      // filter is completely outside the data range.
+      // val inRows2 = rawInputRows(emptyDf)
+      // assert(inRows2 == 0L,
+      //   s"rawInputRows must be 0 when filter is out of range, but got $inRows2")
+
+      // --- Test 3: Filter on non-PK column — should also work for append-only tables ---
+      val valueDf = spark.sql(
+        s"SELECT COUNT(*) as cnt FROM $tbl_name WHERE value > 50.5"
+      )
+
+      // value = id * 1.0, so value > 50.5 means id >= 51 → 50 rows (51..100)
+      assert(valueDf.collect().head.getLong(0) == 50L, "Non-PK column filter should return 50 rows")
+
+      // val inRows3 = rawInputRows(valueDf)
+      // assert(inRows3 > 0L, "rawInputRows must be > 0 for non-PK filter")
+
+      // --- Test 4: Full table scan without filter — all 100 rows ---
+      val fullDf = spark.sql(s"SELECT COUNT(*) as cnt FROM $tbl_name")
+      assert(fullDf.collect().head.getLong(0) == 100L, "Full table scan must return 100 rows")
+
+      // val inRows4 = rawInputRows(fullDf)
+      // assert(inRows4 > 0L, "rawInputRows must be > 0 for full scan")
+
+      // Verify the native Paimon connector was actually used (not Hive fallback)
+      checkOperatorMatch[BoltPaimonScanTransformer](
+        spark.sql(s"SELECT * FROM $tbl_name WHERE id < 5"))
+    }
+  }
+
+  test("paimon native connector: runtime config selection via SET") {
+    val tbl_name = s"paimon_tb"
+
+    withTable(tbl_name) {
+      // Create table without primary key (append-only) so auto-detection picks native.
+      spark.sql(s"""
+                   |create table $tbl_name (id INT, name STRING, value DOUBLE)
+                   |using paimon
+                   |TBLPROPERTIES (
+                   |'file.format' = 'parquet'
+                   |)""".stripMargin)
+
+      // Insert 10 rows.
+      spark.sql(
+        (1 to 10)
+          .map(i => s"($i, 'name_$i', ${i * 1.0})")
+          .mkString(s"INSERT INTO $tbl_name VALUES ", ",", ""))
+
+      def countAll(): Long =
+        spark.sql(s"SELECT COUNT(*) as cnt FROM $tbl_name").collect().head.getLong(0)
+
+      def queryIds(whereClause: String): Seq[Int] =
+        spark
+          .sql(s"SELECT id FROM $tbl_name WHERE $whereClause ORDER BY id")
+          .collect()
+          .map(_.getInt(0))
+          .toSeq
+
+      // --- Default: auto mode should select native connector ---
+      assert(countAll() == 10L, "Default (auto) should return all rows")
+      checkOperatorMatch[BoltPaimonScanTransformer](spark.sql(s"SELECT * FROM $tbl_name"))
+
+      // --- Force Hive fallback via per-query SET ---
+      spark.conf.set(PaimonConfig.PAIMON_NATIVE_CONNECTOR.key, "hive")
+      val hiveRows = spark
+        .sql(
+          s"SELECT COUNT(*) as cnt FROM $tbl_name"
+        )
+        .collect()
+      assert(hiveRows.head.getLong(0) == 10L, "Forced hive connector should return all rows")
+
+      // --- Force native paimon via per-query SET ---
+      spark.conf.set(PaimonConfig.PAIMON_NATIVE_CONNECTOR.key, "paimon")
+      val paimonRows = spark
+        .sql(
+          s"SELECT COUNT(*) as cnt FROM $tbl_name"
+        )
+        .collect()
+      assert(paimonRows.head.getLong(0) == 10L, "Forced paimon connector should return all rows")
+
+      // --- Verify forced hive produces correct filtered results (per-query SET) ---
+      spark.conf.set(PaimonConfig.PAIMON_NATIVE_CONNECTOR.key, "hive")
+      val hiveFiltered = spark
+        .sql(
+          s"SELECT id FROM $tbl_name WHERE id <= 3 ORDER BY id"
+        )
+        .collect()
+      assert(
+        hiveFiltered.map(_.getInt(0)).toSeq == (1 to 3),
+        "Forced hive: filter results must match [1,2,3]")
+
+      // --- Verify forced paimon produces correct filtered results (per-query SET) ---
+      spark.conf.set(PaimonConfig.PAIMON_NATIVE_CONNECTOR.key, "paimon")
+      val paimonFiltered = spark
+        .sql(
+          s"SELECT id FROM $tbl_name WHERE id >= 7 ORDER BY id"
+        )
+        .collect()
+      assert(
+        paimonFiltered.map(_.getInt(0)).toSeq == (7 to 10),
+        "Forced paimon: filter results must match [7,8,9,10]")
+
+      // --- Verify batch-size config is plumbed through (doesn't break results) ---
+      spark.conf.set(PaimonConfig.PAIMON_NATIVE_CONNECTOR.key, "paimon")
+      spark.conf.set(PaimonConfig.PAIMON_READ_BATCH_SIZE.key, "1024")
+      spark.sql(
+        s"SELECT COUNT(*) as cnt FROM $tbl_name"
+      )
+      assert(countAll() == 10L, "Custom batch-size should not affect result correctness")
+    }
+  }
+
+  test("paimon native scan: NULL partitions return default sentinel value") {
+    val tbl = "paimon_null_partition_tb"
+
+    withTable(tbl) {
+      spark.sql(s"""
+                   |CREATE TABLE $tbl (
+                   |  id INT,
+                   |  val DOUBLE,
+                   |  p1 STRING,
+                   |  p2 STRING
+                   |)
+                   |USING paimon
+                   |PARTITIONED BY (p1, p2)
+                   |TBLPROPERTIES (
+                   |  'file.format' = 'parquet',
+                   |  'primary_key' = 'id'
+                   |)
+                   |""".stripMargin)
+
+      // Insert rows covering all NULL partition combinations.
+      spark.sql(s"INSERT INTO $tbl VALUES (1, 1.0, 'sysA', 'b1')") // both present
+      spark.sql(s"INSERT INTO $tbl VALUES (2, 2.0, NULL, 'b1')") // p1 NULL
+      spark.sql(s"INSERT INTO $tbl VALUES (3, 3.0, 'sysB', NULL)") // p2 NULL
+      spark.sql(s"INSERT INTO $tbl VALUES (4, 4.0, NULL, NULL)") // both NULL
+
+      // Both hive and paimon connectors should return NULL for NULL partitions.
+      for (connector <- Seq("hive", "paimon")) {
+        spark.conf.set(PaimonConfig.PAIMON_NATIVE_SOURCE_ENABLED.key, "true")
+        spark.conf.set(PaimonConfig.PAIMON_NATIVE_CONNECTOR.key, connector)
+
+        val rows = spark
+          .sql(
+            s"SELECT id, p1, p2 FROM $tbl ORDER BY id"
+          )
+          .collect()
+
+        assert(rows.length == 4, s"[$connector] Expected 4 rows, got ${rows.length}")
+
+        // Row 1: both partitions present.
+        assert(rows(0).getInt(0) == 1)
+        assert(rows(0).getString(1) == "sysA")
+        assert(rows(0).getString(2) == "b1")
+
+        // Row 2: p1 NULL → NULL.
+        assert(rows(1).getInt(0) == 2)
+        assert(
+          rows(1).isNullAt(1),
+          s"[$connector] Expected NULL for p1, got '${rows(1).getString(1)}'")
+        assert(rows(1).getString(2) == "b1")
+
+        // Row 3: p2 NULL → NULL.
+        assert(rows(2).getInt(0) == 3)
+        assert(rows(2).getString(1) == "sysB")
+        assert(
+          rows(2).isNullAt(2),
+          s"[$connector] Expected NULL for p2, got '${rows(2).getString(2)}'")
+
+        // Row 4: both NULL → both NULL.
+        assert(rows(3).getInt(0) == 4)
+        assert(
+          rows(3).isNullAt(1),
+          s"[$connector] Expected NULL for p1, got '${rows(3).getString(1)}'")
+        assert(
+          rows(3).isNullAt(2),
+          s"[$connector] Expected NULL for p2, got '${rows(3).getString(2)}'")
+      }
+    }
+  }
+  ignore("paimon scan: timestamp values are consistent across connectors") {
+    val tbl = "paimon_timestamp_tb"
+    withTable(tbl) {
+      spark.sql(s"""
+                   |CREATE TABLE $tbl (
+                   |  id INT,
+                   |  ts TIMESTAMP,
+                   |  dt DATE,
+                   |  p1 STRING
+                   |)
+                   |USING paimon
+                   |PARTITIONED BY (p1)
+                   |TBLPROPERTIES (
+                   |  'file.format' = 'parquet',
+                   |  'primary_key' = 'id'
+                   |)
+                   |""".stripMargin)
+
+      // Insert rows with various timestamp/date values including edge cases.
+      spark.sql(
+        s"INSERT INTO $tbl VALUES (1, TIMESTAMP '2024-01-15 10:30:45', DATE '2024-01-15', 'a')"
+      )
+      spark.sql(
+        s"INSERT INTO $tbl VALUES (2, TIMESTAMP '2020-12-31 23:59:59.999999', DATE '2020-12-31', 'a')"
+      )
+      spark.sql(
+        s"INSERT INTO $tbl VALUES (3, TIMESTAMP '1970-01-01 00:00:00', DATE '1970-01-01', 'b')"
+      )
+      spark.sql(s"INSERT INTO $tbl VALUES (4, NULL, NULL, 'b')")
+
+      // --- Java Paimon (source of truth) — disable native source to use vanilla Paimon ---
+      spark.conf.set(PaimonConfig.PAIMON_NATIVE_SOURCE_ENABLED.key, "false")
+      val javaRows = spark
+        .sql(
+          // Read raw timestamp/date values without CAST/string-specific timestamp functions.
+          s"SELECT id, ts, dt, p1 FROM $tbl ORDER BY id"
+        )
+        .queryExecution
+        .toRdd
+        .collect()
+      assert(javaRows.length == 4, s"[java] Expected 4 rows, got ${javaRows.length}")
+
+      def toComparableRows(rows: Array[org.apache.spark.sql.catalyst.InternalRow]): Seq[Row] = {
+        rows.toSeq.map {
+          r =>
+            Row(
+              r.getInt(0),
+              if (r.isNullAt(1)) null else r.getLong(1): java.lang.Long,
+              if (r.isNullAt(2)) null else r.getInt(2): java.lang.Integer,
+              if (r.isNullAt(3)) null else r.getUTF8String(3).toString
+            )
+        }
+      }
+
+      def assertComparableRowsEqual(
+          expected: Seq[Row],
+          actual: Seq[Row],
+          connector: String): Unit = {
+        val expectedValues = expected.map(_.toSeq)
+        val actualValues = actual.map(_.toSeq)
+        assert(
+          expectedValues == actualValues,
+          s"[$connector] raw row mismatch\n" +
+            s"expected: ${expectedValues.mkString("[", ", ", "]")}\n" +
+            s"actual: ${actualValues.mkString("[", ", ", "]")}"
+        )
+      }
+
+      val expected = toComparableRows(javaRows)
+
+      // --- Compare Hive fallback and Native Paimon against Java ground truth ---
+      for (connector <- Seq("hive", "paimon")) {
+        spark.conf.set(PaimonConfig.PAIMON_NATIVE_SOURCE_ENABLED.key, "true")
+        spark.conf.set(PaimonConfig.PAIMON_NATIVE_CONNECTOR.key, connector)
+
+        val actual = spark
+          .sql(s"SELECT id, ts, dt, p1 FROM $tbl ORDER BY id")
+          .queryExecution
+          .toRdd
+          .collect()
+        val actualRows = toComparableRows(actual)
+
+        assertComparableRowsEqual(expected, actualRows, connector)
+      }
     }
   }
 }

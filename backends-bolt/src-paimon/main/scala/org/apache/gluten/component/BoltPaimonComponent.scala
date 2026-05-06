@@ -37,6 +37,8 @@ import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
 
+import org.apache.paimon.spark.source.PaimonConfig
+
 import scala.collection.JavaConverters._
 
 class BoltPaimonComponent extends Component {
@@ -92,9 +94,19 @@ case class BoltPaimonScanTransformer(
   }
 
   override def getAdvancedExtension: Option[AdvancedExtensionNode] = {
+    // Get table path from Paimon scan
+    val tablePath = scan match {
+      case paimonScan: org.apache.paimon.spark.PaimonScan =>
+        paimonScan.table.options().get(org.apache.paimon.CoreOptions.PATH.key())
+      case _ => ""
+    }
+
+    val connectorChoice = AbstractPaimonScanTransformer.resolveConnectorChoice(scan)
     val tableEnhancement = PaimonTableEnhancement
       .newBuilder()
       .putAllTableProperties(tableProperties.asJava)
+      .setTablePath(tablePath)
+      .setUseNativePaimonConnector(connectorChoice == PaimonConfig.NativeConnectorChoice.Paimon)
       .build
 
     Some(

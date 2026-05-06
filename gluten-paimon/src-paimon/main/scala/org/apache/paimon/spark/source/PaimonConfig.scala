@@ -55,4 +55,86 @@ object PaimonConfig {
       .booleanConf
       .createWithDefault(true)
 
+  val PAIMON_NATIVE_CONNECTOR =
+    buildConf("spark.gluten.paimon.native.connector")
+      .doc(
+        "Which connector to use for Paimon scans in Bolt. " +
+          "'auto' (default) automatically selects between native Paimon C++ connector " +
+          "and Hive-fallback based on schema compatibility. " +
+          "'paimon' forces the native Paimon C++ connector (serialized splits). " +
+          "'hive' forces the Hive connector fallback (per-file hive-style metadata).")
+      .stringConf
+      .checkValues(Set("auto", "hive", "paimon"))
+      .createWithDefault("auto")
+
+  /** Valid values for PAIMON_NATIVE_CONNECTOR config. */
+  object NativeConnectorChoice extends Enumeration {
+    val Auto, Paimon, Hive = Value
+
+    def fromString(value: String): Value = {
+      values
+        .find(_.toString.equalsIgnoreCase(value))
+        .getOrElse(
+          throw new IllegalArgumentException(
+            s"Invalid value '$value' for ${PaimonConfig.PAIMON_NATIVE_CONNECTOR.key}. " +
+              s"Valid values: ${values.mkString(", ")}"))
+    }
+  }
+
+  // ---- Paimon C++ connector performance tuning (passed to native connector) ----
+
+  val PAIMON_READ_BATCH_SIZE =
+    buildConf("spark.gluten.paimon.read.batch-size")
+      .doc("Batch size (in rows) for reading data from Paimon files.")
+      .intConf
+      .createWithDefault(4096)
+
+  val PAIMON_READ_MULTI_THREAD_ROW_TO_BATCH =
+    buildConf("spark.gluten.paimon.read.multi-thread-row-to-batch")
+      .doc("Whether to enable multi-threaded row-to-batch conversion.")
+      .booleanConf
+      .createWithDefault(false)
+
+  val PAIMON_READ_ROW_TO_BATCH_THREAD_NUM =
+    buildConf("spark.gluten.paimon.read.row-to-batch-thread-num")
+      .doc("Number of threads for multi-threaded row-to-batch conversion.")
+      .intConf
+      .createWithDefault(4)
+
+  val PAIMON_READ_PREFETCH_ENABLED =
+    buildConf("spark.gluten.paimon.read.prefetch-enabled")
+      .doc("Whether to enable prefetching when reading Paimon files.")
+      .booleanConf
+      .createWithDefault(true)
+
+  val PAIMON_READ_PREFETCH_BATCH_COUNT =
+    buildConf("spark.gluten.paimon.read.prefetch-batch-count")
+      .doc("Number of batches to prefetch ahead during Paimon file reads.")
+      .intConf
+      .createWithDefault(2)
+
+  val PAIMON_READ_PREFETCH_MAX_PARALLEL =
+    buildConf("spark.gluten.paimon.read.prefetch-max-parallel")
+      .doc("Maximum parallelism for Paimon file read prefetch operations.")
+      .intConf
+      .createWithDefault(4)
+
+  val PAIMON_READ_PREDICATE_FILTER_ENABLED =
+    buildConf("spark.gluten.paimon.read.predicate-filter-enabled")
+      .doc("Whether to enable predicate filter pushdown into Paimon Parquet reader.")
+      .booleanConf
+      .createWithDefault(true)
+
+  val PAIMON_NATURAL_READ_SIZE =
+    buildConf("spark.gluten.paimon.io.natural-read-size")
+      .doc("Natural read size (in bytes) for Paimon file reader coalescing.")
+      .longConf
+      .createWithDefault(33554432L) // 32MB
+
+  val PAIMON_COALESCE_READS =
+    buildConf("spark.gluten.paimon.io.coalesce-reads")
+      .doc("Whether to coalesce adjacent reads in Paimon file reader.")
+      .booleanConf
+      .createWithDefault(true)
+
 }

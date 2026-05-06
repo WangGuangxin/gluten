@@ -25,7 +25,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.softaffinity.SoftAffinity
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Alias, And, Attribute, AttributeReference, DynamicPruningExpression, EqualTo, Expression, GreaterThan, LessThan, Like, Literal, Not, Or}
+import org.apache.spark.sql.catalyst.expressions.{Alias, And, Attribute, AttributeReference, DynamicPruningExpression, EqualTo, Expression, GreaterThan, GreaterThanOrEqual, LessThan, LessThanOrEqual, Like, Literal, Not, Or}
 import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.util.CharVarcharUtils
 import org.apache.spark.sql.connector.catalog.Table
@@ -37,6 +37,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 
 import org.apache.paimon.CoreOptions
 import org.apache.paimon.CoreOptions.{ChangelogProducer, MergeEngine}
+import org.apache.paimon.io.DataOutputSerializer
 import org.apache.paimon.spark.{PaimonBaseScan, PaimonInputPartition, PaimonScan}
 import org.apache.paimon.spark.schema.PaimonMetadataColumn.SUPPORTED_METADATA_COLUMNS
 import org.apache.paimon.spark.source.PaimonConfig
@@ -151,11 +152,18 @@ abstract class AbstractPaimonScanTransformer(
     }
     val paimonScan = scan.asInstanceOf[PaimonScan]
     val primaryKeys = paimonScan.table.primaryKeys()
+    val useNativePaimonSplits = AbstractPaimonScanTransformer.canUseNativePaimonConnector(scan)
+    val connectorChoice = AbstractPaimonScanTransformer.resolveConnectorChoice(scan)
+
+    log.info(
+      s"Paimon scan: $scan, connector=$connectorChoice, " +
+        s"nativeSplits=$useNativePaimonSplits")
 
     val partitionComputer = scan match {
       case paimonScan: PaimonScan => shim.getInternalPartitionComputer(paimonScan)
       case _ => throw new GlutenNotSupportException("Only support PaimonScan.")
     }
+
     getPartitions.zipWithIndex.map {
       case (p, index) =>
         p match {
@@ -174,8 +182,21 @@ abstract class AbstractPaimonScanTransformer(
                 if (!split.beforeFiles().isEmpty) {
                   throw new UnsupportedOperationException("Do not support before files")
                 }
-                val partitionRow =
+                val rawPartRow =
                   partitionComputer.generatePartValues(shim.getSplitPartition(split))
+                // generatePartValues() converts NULL partitions to Paimon's
+                // configurable default-partition-name (e.g. "__DEFAULT_PARTITION__").
+                // Replace with "\N" (Hive's standard null literal) so that C++
+                // SplitReader.isHiveNull() recognises it and produces SQL NULL —
+                // matching what the native Paimon connector correctly returns.
+                val partitionRow = rawPartRow.asScala.map {
+                  case (k, v) =>
+                    if (v != null && v.contains(paimonScan.coreOptions.partitionDefaultName())) {
+                      (k, "\\N")
+                    } else {
+                      (k, v)
+                    }
+                }.asJava
                 val fileMetas = split.dataFiles().asScala
                 // zipping should associate the correct file metadata as rawFiles uses dataFiles() as the stream
                 // source when computing the RawFiles list.
@@ -203,23 +224,52 @@ abstract class AbstractPaimonScanTransformer(
             }
             val preferredLoc =
               SoftAffinity.getFilePartitionLocations(paths.toArray, partition.preferredLocations())
-            PaimonLocalFilesBuilder.makePaimonLocalFiles(
-              index,
-              paths.asJava,
-              starts.asJava,
-              lengths.asJava,
-              partitionColumns.asJava,
-              fileFormat,
-              preferredLoc.toList.asJava,
-              new JHashMap[String, String](),
-              buckets.asJava,
-              firstRowIds.asJava,
-              maxSequenceNumbers.asJava,
-              splitGroups.asJava,
-              useHiveSplit,
-              primaryKeys,
-              allRawConvertible
-            )
+
+            val paimonLocalFiles = if (useNativePaimonSplits) {
+              // NATIVE PATH: serialize all DataSplits and pass to native constructor.
+              // Each serialized split becomes one FileOrFiles entry with
+              // PaimonReadOptions.serialized_split set. The C++ side creates one
+              // PaimonConnectorSplit per entry — no per-file paths or metadata needed.
+              val serializedSplits: Seq[Array[Byte]] = partition.splits.map {
+                split =>
+                  val wrapper = new DataOutputSerializer(1024)
+                  split.asInstanceOf[DataSplit].serialize(wrapper)
+                  // getSharedBuffer() returns the full pre-allocated buffer (1024 bytes),
+                  // but serialize() may have written far fewer.  Truncate to only the
+                  // bytes actually written so C++ deserialization doesn't choke on
+                  // trailing garbage.
+                  val fullBuf = wrapper.getSharedBuffer
+                  java.util.Arrays.copyOf(fullBuf, wrapper.length())
+              }
+
+              PaimonLocalFilesBuilder.makeNativePaimonLocalFiles(
+                index,
+                fileFormat,
+                preferredLoc.toList.asJava,
+                serializedSplits.asJava
+              )
+            } else {
+              // HIVE FALLBACK PATH: per-file paimon metadata for HiveConnectorSplit construction
+              PaimonLocalFilesBuilder.makePaimonLocalFiles(
+                index,
+                paths.asJava,
+                starts.asJava,
+                lengths.asJava,
+                partitionColumns.asJava,
+                fileFormat,
+                preferredLoc.toList.asJava,
+                new JHashMap[String, String](),
+                buckets.asJava,
+                firstRowIds.asJava,
+                maxSequenceNumbers.asJava,
+                splitGroups.asJava,
+                useHiveSplit,
+                primaryKeys,
+                allRawConvertible
+              )
+            }
+
+            paimonLocalFiles
           case _ =>
             throw new GlutenNotSupportException("Only support paimon SparkInputPartition.")
         }
@@ -249,9 +299,17 @@ abstract class AbstractPaimonScanTransformer(
             primaryKeys.contains(attr.name) && !isMetadataColumn(attr)
           case GreaterThan(lit: Literal, attr: Attribute) =>
             primaryKeys.contains(attr.name) && !isMetadataColumn(attr)
+          case GreaterThanOrEqual(attr: Attribute, lit: Literal) =>
+            primaryKeys.contains(attr.name) && !isMetadataColumn(attr)
+          case GreaterThanOrEqual(lit: Literal, attr: Attribute) =>
+            primaryKeys.contains(attr.name) && !isMetadataColumn(attr)
           case LessThan(attr: Attribute, lit: Literal) =>
             primaryKeys.contains(attr.name) && !isMetadataColumn(attr)
           case LessThan(lit: Literal, attr: Attribute) =>
+            primaryKeys.contains(attr.name) && !isMetadataColumn(attr)
+          case LessThanOrEqual(attr: Attribute, lit: Literal) =>
+            primaryKeys.contains(attr.name) && !isMetadataColumn(attr)
+          case LessThanOrEqual(lit: Literal, attr: Attribute) =>
             primaryKeys.contains(attr.name) && !isMetadataColumn(attr)
 
           // Like operator with pk and literal
@@ -284,6 +342,73 @@ abstract class AbstractPaimonScanTransformer(
 }
 
 object AbstractPaimonScanTransformer {
+
+  /**
+   * Determines whether the native Paimon C++ connector can be used for the given scan.
+   *
+   * Two-level decision:
+   *   1. Global gate: spark.gluten.paimon.native.split.enabled must be true
+   *      (PAIMON_NATIVE_SPLIT_ENABLED / PAIMON_NATIVE_SOURCE_ENABLED) 2. Per-scan connector
+   *      selection via spark.gluten.paimon.native.connector:
+   *      - "auto" → automatic detection (metadata cols, char type, agg funcs)
+   *      - "paimon" → force native C++ connector (skip auto-detection)
+   *      - "hive" → force Hive-fallback connector
+   *
+   * This single source of truth is used by both:
+   *   - PaimonScanTransformer.getSplitInfosFromPartitions() — split serialization choice
+   *   - BoltPaimonComponent.getAdvancedExtension() — proto flag for C++
+   */
+  def canUseNativePaimonConnector(scan: Scan): Boolean = {
+    resolveConnectorChoice(scan) == PaimonConfig.NativeConnectorChoice.Paimon
+  }
+
+  /** Resolves the connector choice, validating config and running auto-detection if needed. */
+  def resolveConnectorChoice(scan: Scan): PaimonConfig.NativeConnectorChoice.Value = {
+    // Level 1: Global gate — is Paimon native source enabled at all?
+    if (!SQLConf.get.getConf(PaimonConfig.PAIMON_NATIVE_SOURCE_ENABLED)) {
+      return PaimonConfig.NativeConnectorChoice.Hive
+    }
+
+    // Level 2: Per-scan connector selection (validated parse)
+    val choice = PaimonConfig.NativeConnectorChoice.fromString(
+      SQLConf.get.getConf(PaimonConfig.PAIMON_NATIVE_CONNECTOR))
+
+    choice match {
+      case PaimonConfig.NativeConnectorChoice.Paimon =>
+        // Force native — user takes responsibility for compatibility
+        PaimonConfig.NativeConnectorChoice.Paimon
+      case PaimonConfig.NativeConnectorChoice.Hive =>
+        // Force hive fallback
+        PaimonConfig.NativeConnectorChoice.Hive
+      case PaimonConfig.NativeConnectorChoice.Auto =>
+        // Auto-detect based on schema and table properties
+        val schemaHasMetadataCols = scan
+          .readSchema()
+          .fields
+          .exists(f => SUPPORTED_METADATA_COLUMNS.contains(f.name))
+        val schemaHasCharType = scan
+          .readSchema()
+          .fields
+          .exists(_.dataType.isInstanceOf[org.apache.spark.sql.types.CharType])
+        val usesUnsupportedAggFunc = scan match {
+          case paimonScan: PaimonScan =>
+            val props = new CoreOptions(paimonScan.table.options()).toMap.asScala
+            val unsupportedFuncs = Set("count", "product", "listagg")
+            props.exists {
+              case (key, value) =>
+                key.startsWith("fields.") && key.endsWith(".aggregate-function") &&
+                unsupportedFuncs.contains(value.toLowerCase)
+            }
+          case _ => false
+        }
+        if (!schemaHasMetadataCols && !schemaHasCharType && !usesUnsupportedAggFunc) {
+          PaimonConfig.NativeConnectorChoice.Paimon
+        } else {
+          PaimonConfig.NativeConnectorChoice.Hive
+        }
+    }
+  }
+
   def apply(batchScan: BatchScanExec): PaimonScanTransformer = {
     PaimonScanTransformer(
       batchScan.output,

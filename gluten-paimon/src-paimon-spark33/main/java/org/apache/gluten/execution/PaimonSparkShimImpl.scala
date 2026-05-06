@@ -21,8 +21,8 @@ import org.apache.paimon.io.DataFileMeta
 import org.apache.paimon.spark.PaimonScan
 import org.apache.paimon.table.FileStoreTable
 import org.apache.paimon.table.source.DataSplit
-import org.apache.paimon.types.RowType
 import org.apache.paimon.utils.InternalRowPartitionComputer
+import org.apache.spark.sql.catalyst.catalog.ExternalCatalogUtils
 
 import scala.collection.JavaConverters.asScalaBufferConverter
 
@@ -37,23 +37,15 @@ class PaimonSparkShimImpl extends PaimonSparkShim {
   }
 
   override def getBucketPath(split: DataSplit, file: DataFileMeta): String = {
-      split.bucketPath()
+    split.bucketPath()
   }
 
   override def getInternalPartitionComputer(paimonScan: PaimonScan): InternalRowPartitionComputer = {
     val table = paimonScan.table.asInstanceOf[FileStoreTable]
-    PaimonPartitionComputer(
-      paimonScan,
+    new InternalRowPartitionComputer(
+      paimonScan.coreOptions.partitionDefaultName(),
       table.schema().logicalPartitionType(),
-      table.partitionKeys.asScala.toArray
-    )
+      table.partitionKeys.asScala.toArray,
+      false)
   }
-}
-
-case class PaimonPartitionComputer(paimonScan: PaimonScan, paimonRowType: RowType, paimonPartitionKeys: Array[String])
-  extends InternalRowPartitionComputer(
-    paimonScan.coreOptions.partitionDefaultName(),
-    paimonRowType,
-    paimonPartitionKeys,
-    false) {
 }

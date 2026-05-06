@@ -267,7 +267,18 @@ find_package(libbacktrace REQUIRED CONFIG)
 #   target_link_libraries(${PROJECT_NAME} PUBLIC jemalloc::jemalloc)
 # endif()
 
-target_link_libraries(${PROJECT_NAME} PUBLIC gluten bolt::bolt xxHash::xxhash gfx::timsort libbacktrace::libbacktrace folly::folly gflags::gflags)
+target_link_libraries(${PROJECT_NAME}
+  PUBLIC
+  gluten
+  bolt::bolt
+  xxHash::xxhash
+  gfx::timsort
+  libbacktrace::libbacktrace
+  folly::folly
+  gflags::gflags
+  $<LINK_LIBRARY:WHOLE_ARCHIVE,Paimon::format_avro>
+  $<LINK_LIBRARY:WHOLE_ARCHIVE,Paimon::fs_local>
+  $<LINK_LIBRARY:WHOLE_ARCHIVE,Paimon::libavrocpp>)
 target_include_directories(${PROJECT_NAME} PUBLIC gfx::timsort)
 
 execute_process(
@@ -277,14 +288,24 @@ execute_process(
 message(STATUS "Bolt Build Info:\n${bolt_build_info}")
 
 if (BUILD_STATIC)
-  target_link_libraries(${PROJECT_NAME}_static PUBLIC gluten bolt::bolt xxHash::xxhash gfx::timsort libbacktrace::libbacktrace folly::folly gflags::gflags)
+  target_link_libraries(${PROJECT_NAME}_static
+  PUBLIC
+  gluten
+  bolt::bolt
+  xxHash::xxhash
+  gfx::timsort
+  libbacktrace::libbacktrace
+  folly::folly
+  gflags::gflags
+  $<LINK_LIBRARY:WHOLE_ARCHIVE,Paimon::format_avro>
+  $<LINK_LIBRARY:WHOLE_ARCHIVE,Paimon::fs_local>
+  $<LINK_LIBRARY:WHOLE_ARCHIVE,Paimon::libavrocpp>
+  )
 
   #if(ENABLE_JEMALLOC_STATS)
   #  target_link_libraries(${PROJECT_NAME}_static PUBLIC jemalloc::jemalloc)
   #endif()
 endif()
-
-
 
 find_package(re2 CONFIG REQUIRED)
 target_link_libraries(${PROJECT_NAME} PUBLIC ${RE2_LIBRARY})

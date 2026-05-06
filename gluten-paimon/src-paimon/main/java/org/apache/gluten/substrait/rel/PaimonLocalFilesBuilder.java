@@ -16,10 +16,17 @@
  */
 package org.apache.gluten.substrait.rel;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 public class PaimonLocalFilesBuilder {
+
+  /**
+   * Creates a PaimonLocalFilesNode for the Hive-fallback path. Each file in the scan carries
+   * per-file hive-style metadata (bucket, firstRowId, etc.) that the C++ side uses to construct
+   * HiveConnectorSplits.
+   */
   public static PaimonLocalFilesNode makePaimonLocalFiles(
       Integer index,
       List<String> paths,
@@ -52,5 +59,25 @@ public class PaimonLocalFilesBuilder {
         useHiveSplit,
         primaryKeys,
         allRawConvertible);
+  }
+
+  /**
+   * Creates a PaimonLocalFilesNode for the native Paimon connector path. Each serialized split
+   * becomes one FileOrFiles entry in the proto, carrying the split bytes in
+   * PaimonReadOptions.serialized_split. The C++ side deserializes these directly into
+   * PaimonConnectorSplits — no per-file paths or hive-style metadata needed.
+   *
+   * @param index partition index
+   * @param fileFormat file format (parquet/orc)
+   * @param preferredLocations preferred execution locations
+   * @param serializedPaimonSplits serialized DataSplit bytes, one per split in this partition
+   */
+  public static PaimonLocalFilesNode makeNativePaimonLocalFiles(
+      Integer index,
+      LocalFilesNode.ReadFileFormat fileFormat,
+      List<String> preferredLocations,
+      List<byte[]> serializedPaimonSplits) {
+    return new PaimonLocalFilesNode(
+        index, fileFormat, preferredLocations, new HashMap<>(), serializedPaimonSplits);
   }
 }
