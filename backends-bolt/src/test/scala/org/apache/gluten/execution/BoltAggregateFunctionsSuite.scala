@@ -1221,6 +1221,7 @@ class BoltAggregateFunctionsFlushSuite extends BoltAggregateFunctionsSuite {
     super.sparkConf
       // To test flush behaviors, set low flush threshold to ensure flush happens.
       .set(BoltConfig.BOLT_FLUSHABLE_PARTIAL_AGGREGATION_ENABLED.key, "true")
+      .set("spark.gluten.sql.columnar.backend.bolt.partialAggregationSpillMaxPct", "1")
       .set(BoltConfig.ABANDON_PARTIAL_AGGREGATION_MIN_PCT.key, "1")
       .set(BoltConfig.ABANDON_PARTIAL_AGGREGATION_MIN_ROWS.key, "10")
   }
