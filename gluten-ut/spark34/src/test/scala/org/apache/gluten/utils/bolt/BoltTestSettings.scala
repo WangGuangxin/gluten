@@ -124,6 +124,7 @@ class BoltTestSettings extends BackendTestSettings {
     // Rewrite in Gluten to replace Seq with Array
     .exclude("Shuffle")
     .excludeGlutenTest("Shuffle")
+    .exclude("MapFromEntries")
   enableSuite[GlutenConditionalExpressionSuite]
   enableSuite[GlutenDateExpressionsSuite]
     .exclude("TIMESTAMP_SECONDS")

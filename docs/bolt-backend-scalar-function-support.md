@@ -213,6 +213,7 @@ This document outlines the scalar functions that are **default-registered and av
 | map_entries | S | |
 | map_filter | S | |
 | map_filter_keys | S | |
+| map_from_entries | S | |
 | map_keys | S | |
 | map_update | S | |
 | map_values | S | |
