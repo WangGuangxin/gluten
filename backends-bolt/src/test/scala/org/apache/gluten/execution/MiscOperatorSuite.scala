@@ -1984,6 +1984,29 @@ class MiscOperatorSuite extends BoltWholeStageTransformerSuite with AdaptiveSpar
     }
   }
 
+  test("test map_from_arrays") {
+    withTempView("t") {
+      Seq((Seq(1, 2, 1), Seq("a", "b", "c"))).toDF("k", "v").createOrReplaceTempView("t")
+      withSQLConf(SQLConf.MAP_KEY_DEDUP_POLICY.key -> SQLConf.MapKeyDedupPolicy.LAST_WIN.toString) {
+        runQueryAndCompare(
+          """
+            |select map_from_arrays(k, v) from t
+            |""".stripMargin
+        ) {
+          checkGlutenOperatorMatch[ProjectExecTransformer]
+        }
+      }
+
+      withSQLConf(
+        SQLConf.MAP_KEY_DEDUP_POLICY.key -> SQLConf.MapKeyDedupPolicy.EXCEPTION.toString) {
+        val msg = intercept[Exception] {
+          spark.sql("select map_from_arrays(k, v) from t").collect()
+        }.getMessage
+        assert(msg.contains("Duplicate map keys (1) are not allowed"))
+      }
+    }
+  }
+
   // Enable the test after fixing https://github.com/apache/incubator-gluten/issues/6827
   ignore("Test round expression") {
     val df1 = runQueryAndCompare("SELECT round(cast(0.5549999999999999 as double), 2)") { _ => }

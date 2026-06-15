@@ -287,6 +287,8 @@ class BoltTestSettings extends BackendTestSettings {
     .exclude("aggregate function - array for non-primitive type")
     // Rewrite this test because Bolt sorts rows by key for primitive data types, which disrupts the original row sequence.
     .exclude("map_zip_with function - map of primitive types")
+    // Rewrite this test because Bolt's exception message is different with vanilla spark.
+    .exclude("map with arrays")
   enableSuite[GlutenDataFrameTungstenSuite]
   enableSuite[GlutenDataFrameSetOperationsSuite]
     // Result depends on the implementation for nondeterministic expression rand.
