@@ -169,6 +169,14 @@ class BoltSparkPlanExecApi extends SparkPlanExecApi {
     GenericExpressionTransformer(substraitExprName, Seq(child), expr)
   }
 
+  /** Transform map_from_entries to Substrait. */
+  override def genMapFromEntriesTransformer(
+      substraitExprName: String,
+      child: ExpressionTransformer,
+      expr: Expression): ExpressionTransformer = {
+    GenericExpressionTransformer(substraitExprName, Seq(child), expr)
+  }
+
   /** Transform array filter to Substrait. */
   override def genArrayFilterTransformer(
       substraitExprName: String,

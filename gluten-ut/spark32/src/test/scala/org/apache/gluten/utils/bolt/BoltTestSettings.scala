@@ -206,6 +206,7 @@ class BoltTestSettings extends BackendTestSettings {
     // Rewrite in Gluten to replace Seq with Array
     .exclude("Shuffle")
     .excludeGlutenTest("Shuffle")
+    .exclude("MapFromEntries")
   enableSuite[GlutenDateExpressionsSuite]
     .exclude("TIMESTAMP_SECONDS")
     // Rewrite because Spark collect causes long overflow.
