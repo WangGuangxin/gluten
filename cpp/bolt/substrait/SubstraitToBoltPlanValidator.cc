@@ -59,7 +59,7 @@ const std::unordered_set<std::string> kRegexFunctions = {
     "rlike"};
 
 const std::unordered_set<std::string> kBlackList =
-    {"split_part", "sequence", "approx_percentile"};
+    {"split_part", "approx_percentile"};
 } // namespace
 
 bool SubstraitToBoltPlanValidator::parseBoltType(

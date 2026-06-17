@@ -544,6 +544,23 @@ abstract class ScalarFunctionsValidateSuite extends FunctionsValidateSuite {
     }
   }
 
+  test("sequence") {
+    withSQLConf(("spark.sql.optimizer.excludedRules", NullPropagation.ruleName)) {
+      runQueryAndCompare("""SELECT sequence(l_orderkey, l_orderkey + 5), l_orderkey
+                           | from lineitem limit 100""".stripMargin) {
+        checkGlutenOperatorMatch[ProjectExecTransformer]
+      }
+      runQueryAndCompare("""SELECT sequence(l_orderkey, l_orderkey + 10, 2), l_orderkey
+                           | from lineitem limit 100""".stripMargin) {
+        checkGlutenOperatorMatch[ProjectExecTransformer]
+      }
+      runQueryAndCompare("""SELECT sequence(l_orderkey + 5, l_orderkey, -1), l_orderkey
+                           | from lineitem limit 100""".stripMargin) {
+        checkGlutenOperatorMatch[ProjectExecTransformer]
+      }
+    }
+  }
+
   test("map_from_arrays optimized by Spark constant folding") {
     withSQLConf(("spark.sql.optimizer.excludedRules", "")) {
       runQueryAndCompare("""SELECT map_from_arrays(sequence(1, 5),sequence(1, 5)), l_orderkey
