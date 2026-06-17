@@ -177,6 +177,18 @@ class BoltSparkPlanExecApi extends SparkPlanExecApi {
     GenericExpressionTransformer(substraitExprName, Seq(child), expr)
   }
 
+  /** Transform sequence to Substrait. */
+  override def genSequenceTransformer(
+      substraitExprName: String,
+      children: Seq[ExpressionTransformer],
+      expr: Sequence): ExpressionTransformer = {
+    if (expr.children.exists(_.dataType.isInstanceOf[TimestampType])) {
+      throw new GlutenNotSupportException(
+        "sequence with timestamp input is not supported in bolt backend")
+    }
+    GenericExpressionTransformer(substraitExprName, children, expr)
+  }
+
   /** Transform array filter to Substrait. */
   override def genArrayFilterTransformer(
       substraitExprName: String,

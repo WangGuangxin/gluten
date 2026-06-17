@@ -260,6 +260,14 @@ trait SparkPlanExecApi {
     throw new GlutenNotSupportException("map_from_entries is not supported")
   }
 
+  /** Transform sequence to Substrait. */
+  def genSequenceTransformer(
+      substraitExprName: String,
+      children: Seq[ExpressionTransformer],
+      expr: Sequence): ExpressionTransformer = {
+    GenericExpressionTransformer(substraitExprName, children, expr)
+  }
+
   /** Transform array filter to Substrait. */
   def genArrayFilterTransformer(
       substraitExprName: String,
