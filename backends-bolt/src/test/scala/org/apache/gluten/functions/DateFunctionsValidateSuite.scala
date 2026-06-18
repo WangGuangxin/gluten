@@ -357,7 +357,7 @@ abstract class DateFunctionsValidateSuite extends FunctionsValidateSuite {
     }
   }
 
-  ignore("trunc") {
+  test("trunc") {
     withTempPath {
       path =>
         Seq(
