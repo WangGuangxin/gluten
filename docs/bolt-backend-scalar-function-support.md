@@ -25,7 +25,7 @@ This document outlines the scalar functions that are **default-registered and av
 | Mathematical | 54 |
 | Misc | 2 |
 | Predicate | 11 |
-| String | 78 |
+| String | 79 |
 | Struct | 1 |
 | URL | 10 |
 
@@ -323,6 +323,7 @@ This document outlines the scalar functions that are **default-registered and av
 | ends_with | S | |
 | endswith | S | |
 | find_in_set | S | |
+| format_number | S | |
 | instr | S | |
 | length | S | |
 | levenshtein | S | |
