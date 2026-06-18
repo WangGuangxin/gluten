@@ -138,6 +138,7 @@ object ExpressionNames {
   final val BASE64 = "base64"
   final val MASK = "mask"
   final val FORMAT_STRING = "format_string"
+  final val FORMAT_NUMBER = "format_number"
   final val LUHN_CHECK = "luhn_check"
 
   // URL functions

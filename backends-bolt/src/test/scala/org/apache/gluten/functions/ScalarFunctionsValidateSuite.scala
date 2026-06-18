@@ -183,6 +183,15 @@ abstract class ScalarFunctionsValidateSuite extends FunctionsValidateSuite {
     checkLengthAndPlan(df, 1)
   }
 
+  test("format_number") {
+    runQueryAndCompare("SELECT format_number(l_extendedprice, 2) from lineitem limit 5") {
+      checkGlutenOperatorMatch[ProjectExecTransformer]
+    }
+    runQueryAndCompare("SELECT format_number(l_orderkey, 0) from lineitem limit 5") {
+      checkGlutenOperatorMatch[ProjectExecTransformer]
+    }
+  }
+
   test("hash") {
     runQueryAndCompare("SELECT hash(l_orderkey) from lineitem limit 1") {
       checkGlutenOperatorMatch[ProjectExecTransformer]
