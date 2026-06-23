@@ -676,6 +676,7 @@ class BoltTestSettings extends BackendTestSettings {
     )
   enableSuite[GlutenDataFrameAsOfJoinSuite]
   enableSuite[GlutenDataFrameComplexTypeSuite]
+    .exclude("MapFromArrays")
   enableSuite[GlutenDataFrameFunctionsSuite]
     // blocked by Bolt-5768
     .exclude("aggregate function - array for primitive type containing null")
@@ -686,6 +687,7 @@ class BoltTestSettings extends BackendTestSettings {
     .exclude("map with arrays")
     // Exception class different.
     .exclude("array_insert functions")
+    .exclude("SPARK-24734: Fix containsNull of Concat for array type")
   enableSuite[GlutenDataFrameHintSuite]
   enableSuite[GlutenDataFrameImplicitsSuite]
   enableSuite[GlutenDataFrameJoinSuite]

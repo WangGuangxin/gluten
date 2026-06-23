@@ -640,6 +640,7 @@ class BoltTestSettings extends BackendTestSettings {
     )
   enableSuite[GlutenDataFrameAsOfJoinSuite]
   enableSuite[GlutenDataFrameComplexTypeSuite]
+    .exclude("MapFromArrays")
   enableSuite[GlutenDataFrameFunctionsSuite]
     // blocked by Bolt-5768
     .exclude("aggregate function - array for primitive type containing null")
@@ -648,6 +649,7 @@ class BoltTestSettings extends BackendTestSettings {
     .exclude("map_zip_with function - map of primitive types")
     // Rewrite this test because Bolt's exception message is different with vanilla spark.
     .exclude("map with arrays")
+    .exclude("SPARK-24734: Fix containsNull of Concat for array type")
   enableSuite[GlutenDataFrameHintSuite]
   enableSuite[GlutenDataFrameImplicitsSuite]
   enableSuite[GlutenDataFrameJoinSuite]

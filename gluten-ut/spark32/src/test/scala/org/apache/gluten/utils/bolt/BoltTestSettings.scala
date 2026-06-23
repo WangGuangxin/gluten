@@ -289,6 +289,7 @@ class BoltTestSettings extends BackendTestSettings {
     .exclude("map_zip_with function - map of primitive types")
     // Rewrite this test because Bolt's exception message is different with vanilla spark.
     .exclude("map with arrays")
+    .exclude("SPARK-24734: Fix containsNull of Concat for array type")
   enableSuite[GlutenDataFrameTungstenSuite]
   enableSuite[GlutenDataFrameSetOperationsSuite]
     // Result depends on the implementation for nondeterministic expression rand.
@@ -299,6 +300,7 @@ class BoltTestSettings extends BackendTestSettings {
     // Incorrect result for array and length.
     .excludeGlutenTest("types bool/byte/short/float/double/decimal/binary/map/array/struct")
   enableSuite[GlutenDataFrameComplexTypeSuite]
+    .exclude("MapFromArrays")
   enableSuite[GlutenApproximatePercentileQuerySuite]
   enableSuite[GlutenDataFrameRangeSuite]
     .exclude("SPARK-20430 Initialize Range parameters in a driver side")
