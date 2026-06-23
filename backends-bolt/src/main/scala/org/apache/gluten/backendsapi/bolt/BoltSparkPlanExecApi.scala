@@ -895,6 +895,29 @@ class BoltSparkPlanExecApi extends SparkPlanExecApi {
     )
   }
 
+  /**
+   * Define backend-specific expression converter. Bolt's native MapFromArrays implementation only
+   * matches Spark's `LAST_WIN` map-key dedup policy. When `spark.sql.mapKeyDedupPolicy` is set to a
+   * non `LAST_WIN` value (e.g. `FIRST_WIN`), fall back to vanilla Spark to keep semantics
+   * consistent.
+   */
+  override def extraExpressionConverter(
+      substraitExprName: String,
+      expr: Expression,
+      attributeSeq: Seq[Attribute]): Option[ExpressionTransformer] = {
+    expr match {
+      case _: MapFromArrays =>
+        val policy = SQLConf.get.getConf(SQLConf.MAP_KEY_DEDUP_POLICY)
+        if (policy == SQLConf.MapKeyDedupPolicy.FIRST_WIN.toString) {
+          GlutenExceptionUtil.throwsNotFullySupported(
+            ExpressionNames.MAP_FROM_ARRAYS,
+            MapFromArraysRestrictions.NOT_SUPPORT_FIRST_WIN_DEDUP_POLICY)
+        }
+        None
+      case _ => None
+    }
+  }
+
   /** Generate an expression transformer to transform NamedStruct to Substrait. */
   override def genNamedStructTransformer(
       substraitExprName: String,

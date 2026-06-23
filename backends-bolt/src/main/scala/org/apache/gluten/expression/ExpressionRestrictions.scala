@@ -74,6 +74,18 @@ object ToJsonRestrictions extends ExpressionRestrictions {
     Array(NOT_SUPPORT_WITH_OPTIONS, NOT_SUPPORT_UPPERCASE_STRUCT)
 }
 
+object MapFromArraysRestrictions extends ExpressionRestrictions {
+  val NOT_SUPPORT_FIRST_WIN_DEDUP_POLICY: String =
+    s"${ExpressionNames.MAP_FROM_ARRAYS} don't supports ${SQLConf.MAP_KEY_DEDUP_POLICY.key} = " +
+      s"${SQLConf.MapKeyDedupPolicy.FIRST_WIN.toString} in Bolt"
+
+  override val functionName: String = ExpressionNames.MAP_FROM_ARRAYS
+
+  override val restrictionMessages: Array[String] = Array(
+    NOT_SUPPORT_FIRST_WIN_DEDUP_POLICY
+  )
+}
+
 object Unbase64Restrictions extends ExpressionRestrictions {
   val NOT_SUPPORT_FAIL_ON_ERROR: String =
     s"${ExpressionNames.UNBASE64} with failOnError is not supported"
@@ -99,6 +111,7 @@ object ExpressionRestrictions {
       StrToMapRestrictions,
       FromJsonRestrictions,
       ToJsonRestrictions,
+      MapFromArraysRestrictions,
       Unbase64Restrictions,
       Base64Restrictions
     )

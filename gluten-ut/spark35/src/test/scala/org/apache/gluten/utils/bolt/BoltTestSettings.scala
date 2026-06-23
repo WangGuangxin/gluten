@@ -710,6 +710,7 @@ class BoltTestSettings extends BackendTestSettings {
     .exclude("raise_error")
     .exclude("assert_true")
   enableSuite[GlutenComplexTypeSuite]
+    .exclude("MapFromArrays")
   enableSuite[GlutenConfigBehaviorSuite]
     // Will be fixed by cleaning up ColumnarShuffleExchangeExec.
     .exclude("SPARK-22160 spark.sql.execution.rangeExchange.sampleSizePerPartition")
@@ -748,6 +749,7 @@ class BoltTestSettings extends BackendTestSettings {
     .exclude("map_zip_with function - map of primitive types")
     // Rewrite this test because Bolt's exception message is different with vanilla spark.
     .exclude("map with arrays")
+    .exclude("SPARK-24734: Fix containsNull of Concat for array type")
   enableSuite[GlutenDataFrameHintSuite]
   enableSuite[GlutenDataFrameImplicitsSuite]
   enableSuite[GlutenDataFrameJoinSuite]
