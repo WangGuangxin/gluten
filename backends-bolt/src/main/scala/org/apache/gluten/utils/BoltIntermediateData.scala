@@ -163,6 +163,12 @@ object BoltIntermediateData {
     // are null
     case _: MaxMinBy =>
       "row_constructor_with_all_null"
+    // For first/last the intermediate is (value, valueSet). The bolt guarantees the
+    // struct is always non-null and valueSet is always non-null (false or true), so no
+    // implicit re-nulling by the row constructor is needed. row_constructor leaves struct
+    // nullness entirely to the producer.
+    case _: First | _: Last =>
+      "row_constructor"
     case _ => "row_constructor_with_null"
   }
 
