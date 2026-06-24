@@ -555,6 +555,35 @@ abstract class BoltAggregateFunctionsSuite extends BoltWholeStageTransformerSuit
     }
   }
 
+  test("first/last over many empty partitions returns the real value, not null") {
+    // A global first()/last() runs one partial aggregate per input partition.
+    // Partitions left empty by the filter still emit a "no value" partial,
+    // which must not overwrite the real value with NULL on merge. Most of the
+    // ~200 partitions are empty after `k = 7`; the constant value makes the
+    // result deterministic ('20260531', never NULL).
+    withTempView("first_last_empty") {
+      spark
+        .range(0, 200, 1, 200)
+        .selectExpr("id", "id % 100 as k", "'20260531' as v")
+        .createOrReplaceTempView("first_last_empty")
+
+      runQueryAndCompare("""
+                           |select first(v), last(v), first(v, true), last(v, true)
+                           |from first_last_empty where k = 7
+                           |""".stripMargin) {
+        checkGlutenOperatorMatch[HashAggregateExecTransformer]
+      }
+
+      // A genuinely-recorded NULL must still come back as NULL.
+      runQueryAndCompare("""
+                           |select first(c), last(c)
+                           |from (select cast(null as int) as c from range(0, 100, 1, 8))
+                           |""".stripMargin) {
+        checkGlutenOperatorMatch[HashAggregateExecTransformer]
+      }
+    }
+  }
+
   test("approx_count_distinct") {
     runQueryAndCompare(
       """
