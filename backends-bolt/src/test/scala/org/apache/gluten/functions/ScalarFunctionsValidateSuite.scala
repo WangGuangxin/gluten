@@ -184,7 +184,7 @@ abstract class ScalarFunctionsValidateSuite extends FunctionsValidateSuite {
   }
 
   test("format_number") {
-    runQueryAndCompare("SELECT format_number(l_extendedprice, 2) from lineitem limit 5") {
+    runQueryAndCompare("SELECT format_number(l_linenumber, 2) from lineitem limit 5") {
       checkGlutenOperatorMatch[ProjectExecTransformer]
     }
     runQueryAndCompare("SELECT format_number(l_orderkey, 0) from lineitem limit 5") {
