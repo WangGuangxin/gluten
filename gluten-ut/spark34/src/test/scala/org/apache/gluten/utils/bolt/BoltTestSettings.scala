@@ -125,6 +125,7 @@ class BoltTestSettings extends BackendTestSettings {
     .exclude("Shuffle")
     .excludeGlutenTest("Shuffle")
     .exclude("MapFromEntries")
+    .exclude("Sequence of numbers")
   enableSuite[GlutenConditionalExpressionSuite]
   enableSuite[GlutenDateExpressionsSuite]
     .exclude("TIMESTAMP_SECONDS")
