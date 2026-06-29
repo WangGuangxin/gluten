@@ -130,6 +130,38 @@ conf 显式声明，加载的就是 `libbolt.so`。
 后端命名空间的 conf 前缀通过 `GlutenConfig.prefixOf("bolt")` 派生为
 `spark.gluten.sql.columnar.backend.bolt.*`（参见 `BoltBackend.CONF_PREFIX`）。
 
+## 从 PR #11261 移植的 Bolt 特性
+
+下表记录了把 PR #11261 中**真正属于 Bolt 的增量特性**逐 commit 迁移到 thin 设计的情况。
+纯粹的 `velox→bolt` 重命名拷贝、以及 PR 提交时尚未合入、但**现已存在于上游 main**
+的改动（如 ORC/Parquet 按位置映射 #10697、`SparkExprToSubfieldFilterParser` 注册、
+`trunc`/`sequence`/`map_from_*` 的基础 `Sig` 注册）不再重复移植。
+
+| PR commit | 特性 | 落地方式 | 状态 |
+| --- | --- | --- | --- |
+| `826c0735` | InSet 大集合 heap OOM 修复（延迟构造 LiteralNode） | gluten-substrait 共享层（`ExpressionBuilder`/`SingularOrListNode`/`PredicateExpressionTransformer`），velox 同样受益 | ✅ 已移植 |
+| `3aaa02c6` / `a0619eb1` | `BoltConfig`：batchsize 默认值覆盖、`...backend.bolt.shuffle.check.ratio` | 新建 `backends-bolt/.../config/BoltConfig.scala` + `ConfigRegistry` 纯新增 hook | ✅ 已移植（shuffle 写路径读取点见下方 TODO） |
+| `30579e4d` | `sequence` 函数（timestamp 输入回退） | 共享 `SparkPlanExecApi.genSequenceTransformer` + `ExpressionConverter` 分发；`BoltSparkPlanExecApi` 覆写 | ✅ 已移植 |
+| `2942287a` | `format_number` 函数 | 共享 `ExpressionNames`/`ExpressionMappings` 新增 `FORMAT_NUMBER` | ✅ 已移植 |
+| `fb8974c8` / `af2e3bbf` | `map_from_arrays`（FIRST_WIN 回退） | `BoltSparkPlanExecApi.extraExpressionConverter` 覆写 + `MapFromArraysRestrictions` | ✅ 已移植（JVM 侧） |
+| `d34ca59b` | `map_from_entries` | main 已等价支持，Bolt 直接继承，无需覆写 | ✅ 已在上游 |
+| `a9e29e1e` | first/last 中间态用 `row_constructor` | 新建 `BoltIntermediateData`；派发 hook 见下方 TODO | ✅ 数据对象已移植 |
+| `06b80cec`（拷贝） | 复制整个 backends-velox / cpp/velox | thin 设计用继承+SPI+profile 复用替代 | ❌ 不移植（即本方案目标） |
+| `6dbdc7c3` / `faf6d0d2` | Paimon 多后端重构 + 元数据列过滤修复 | **后端无关**的 Paimon 上游重构，非 Bolt 专属；Bolt 已经由 `-Ppaimon` profile 复用 velox 的 `src-paimon` 自动获得 Paimon 支持 | ⏸️ 主动延后（依赖大规模重构，与 thin-bolt 目标正交） |
+| 8 个 `*.md` 文档 commit | bolt-quick-start / Bolt.md 等 | 内容针对“全拷贝”后端，已被本 README 取代 | ⏸️ 不单独移植 |
+| 多个 native commit（`cpp/bolt` 函数校验、`__cxa_throw`、符号冲突等） | 依赖字节内部 Bolt 引擎源码 | 已在 `cpp/bolt/compute/BoltBackend.cc` 以 `TODO(bolt native)` 注释记录需在 `SubstraitToBoltPlanValidator` 放行的函数清单 | 📝 脚手架注释 |
+
+### 已知 TODO（需触及共享/原生代码，按风险延后）
+
+* **shuffle.check.ratio 读取点**：配置项已定义，但读取它的 `ColumnarShuffleWriter`
+  及 `shuffle_writer_info.proto` 属于与 velox 共享的代码，接线需新增 proto 字段，
+  存在影响 velox 默认行为的风险，故在 `BoltConfig` 中以 `// TODO(bolt)` 标注。
+* **first/last `row_constructor` 派发**：`BoltIntermediateData` 已就位，但
+  `HashAggregateExecTransformer`（共享）当前硬编码调用 `VeloxIntermediateData`，
+  需经 API hook 派发，且依赖 native 验证，故留作 TODO。
+* **原生函数放行**：`sequence`/`map_from_arrays`/`format_number` 等需要在 Bolt
+  专有引擎的 `SubstraitToBoltPlanValidator` 中放行，本仓库无法构建该引擎。
+
 ## 与 PR #11261 的差异
 
 PR #11261 通过**复制** `backends-velox` 与 `cpp/velox`（≈1100 文件）建立 Bolt
