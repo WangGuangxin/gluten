@@ -42,6 +42,7 @@ backends-velox / VeloxLikeBackend (abstract)
 | `cpp/conanfile.py`                                                              | gluten cpp 的 conan recipe（移植自 PR #11261）：依赖 `bolt/<ver>@<user>/<channel>`，设置 `ENABLE_BOLT` |
 | `cpp/bolt/CMakeLists.txt`                                                       | 定位 bolt 引擎（conan `bolt::bolt` 或 `BOLT_HOME`/`BOLT_BUILD_PATH`）→ 运行 codegen → `add_subdirectory` 生成树，产出 `libbolt.so` |
 | `cpp/bolt/README.md`                                                            | 联合编译说明（codegen-from-cpp/velox，不提交副本） |
+| `cpp/bolt/substrait/`                                                           | **Substrait 转换层手写覆盖目录**（默认仅 `README.md` + `.gitkeep`）：放入与 `cpp/velox/substrait/` 同相对路径的源文件，codegen 完成后会**原样**覆盖到生成树同名文件（不经 sed 处理） |
 | `dev/gen-bolt-cpp.sh`                                                           | 构建期从 `cpp/velox` 生成 Gluten<->Bolt 桥接（仅引擎引用替换），输出到 `cpp/build/bolt_gen`（不提交） |
 | `dev/builddeps-boltbe.sh`                                                       | 联合编译入口（折叠 PR Makefile 的 bolt-recipe / build / arrow 目标） |
 | `dev/install-conan.sh`、`dev/build_bolt_arrow.sh`                               | 移植自 PR #11261：安装 conan + 检查 GCC 版本；构建 Arrow-for-bolt Java 库 |
@@ -78,6 +79,29 @@ include 前缀 `bolt/`、conan 包目标 `bolt::bolt`（库 `bolt_engine`）。G
 
 > 对比 PR #11261：它把 `cpp/velox`（≈183 文件）整目录复制为 `cpp/bolt`；本方案用
 > 构建期 codegen 取代该冗余副本。
+
+#### Substrait 转换层手写覆盖（`cpp/bolt/substrait/`）
+
+`cpp/velox/substrait/` 是引擎耦合最重的一块（算子下发、类型映射、`Plan/Expr`
+校验等），与上游 Velox 通常存在**接口级**分叉，纯字符串替换往往无法产出可
+编译的结果。为此提供一个**可见、手写、按需覆盖**的入口：
+
+| 步骤 | 行为 |
+| --- | --- |
+| 1. 全树 codegen + sed 替换 | `dev/gen-bolt-cpp.sh` 照常生成 `${BOLT_GEN_DIR}/...` |
+| 2. 叠加手写覆盖 | 把 `cpp/bolt/substrait/<相对路径>` 中的源文件**原样**复制到 `${BOLT_GEN_DIR}/substrait/<相对路径>`，**不经** sed 处理 |
+| 3. CMake 消费 | 生成 `CMakeLists.txt` 的源列表以**相对路径**为键，覆盖文件**替换**生成版本的同一构建单元，无重复符号 |
+
+约束：
+
+- 覆盖文件必须直接以 `bytedance::bolt` 命名空间 / `bolt/` include 前缀书写；
+  否则 codegen 末尾的残留检查会失败。
+- gluten-core 的 include（`compute/Runtime.h`、`memory/...`、`jni/...`）保持
+  原样即可，无需修改。
+- 默认情况下你**不需要**使用本目录，优先依赖整树 codegen；只有当某个 substrait
+  文件的自动生成版本无法编译或行为不正确时，才把它提升为手写覆盖。
+
+详见 [`cpp/bolt/substrait/README.md`](../cpp/bolt/substrait/README.md)。
 
 #### 联合编译命令（需要 conan 工具链）
 

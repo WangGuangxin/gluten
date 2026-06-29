@@ -122,3 +122,35 @@ backend. The Spark UI SQL tab confirms the active backend.
 To revert to the Velox backend, repackage with `-Pbackends-velox` only and
 restore `spark.gluten.sql.columnar.backend.velox.*` keys. To fall back to vanilla
 Spark, set `--conf spark.gluten.enabled=false` (or remove `spark.plugins`).
+
+## 7. Substrait override directory (hand-written Bolt-specific sources)
+
+The Substrait conversion layer (`SubstraitToVeloxPlan`, `SubstraitToVeloxExpr`,
+`SubstraitToVeloxPlanValidator`, `SubstraitParser`, …) is the most engine-coupled
+part of the Velox bridge. Because Bolt is a living fork of Velox, this layer is
+the most likely place where a mechanical `facebook::velox → bytedance::bolt`
+substitution cannot produce a buildable result.
+
+To stay in the "no committed copy of cpp/velox" model while still allowing
+hand-edits where they are unavoidable, the Bolt backend supports a **substrait
+override directory** at `cpp/bolt/substrait/`:
+
+- Drop a source file at `cpp/bolt/substrait/<relpath>` mirroring
+  `cpp/velox/substrait/<relpath>`.
+- `dev/gen-bolt-cpp.sh` first runs the whole-tree codegen + sed substitution
+  into `${BOLT_GEN_DIR}`, then **overlays** every file under
+  `cpp/bolt/substrait/` onto `${BOLT_GEN_DIR}/substrait/<relpath>`, replacing
+  the generated counterpart.
+- The override copy is **not** sed-processed — write it directly in the
+  `bytedance::bolt` namespace with `#include "bolt/..."` / `#include <bolt/...>`.
+- The generated `CMakeLists.txt` source list is keyed by relative path, so the
+  overlaid file takes the slot of the generated one with **no duplicate
+  compilation**.
+
+When to use it: only when the auto-generated file does not compile or behaves
+incorrectly against Bolt because the engine API diverged from upstream Velox.
+Default to whole-tree codegen and reserve hand-written overrides for the
+narrow set of files that genuinely require them.
+
+See [`cpp/bolt/substrait/README.md`](../cpp/bolt/substrait/README.md) for the
+detailed rules (file extensions, directory layout, residue checks).

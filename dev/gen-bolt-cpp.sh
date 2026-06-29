@@ -62,6 +62,20 @@
 #   same JNI symbols as libvelox.so. The committed cpp/bolt/CMakeLists.txt drives
 #   this script and locates the bolt engine (conan find_package or BOLT_HOME).
 #
+# HAND-WRITTEN OVERRIDES (cpp/bolt/substrait/)
+#   Some files in the substrait conversion layer (SubstraitToVeloxPlan,
+#   SubstraitToVeloxExpr, validators, ...) diverge enough between Velox and
+#   Bolt that mechanical sed substitution does not produce a buildable result.
+#   Instead of forking the entire bridge for those few files, we keep the
+#   whole-tree codegen and let the user drop hand-written replacements under
+#   cpp/bolt/substrait/<relpath> mirroring cpp/velox/substrait/<relpath>. After
+#   the namespace/include substitutions run, this script OVERLAYS those files
+#   onto $OUT_DIR/substrait/<relpath>, replacing the generated counterpart.
+#   The override copy is NOT passed through sed (the hand-written file is
+#   already in bytedance::bolt / bolt/ form). Because the source list in the
+#   generated CMakeLists is keyed by relative path, the overlaid file takes
+#   the slot of the generated one with no duplicate compilation.
+#
 # CAVEAT (honest boundary)
 #   These are mechanical, source-level substitutions. Bolt is a living fork, so a
 #   handful of edge cases (APIs that diverged from upstream Velox, headers that
@@ -156,6 +170,40 @@ if [[ -f "$OUT_DIR/symbols.map" ]]; then
   sed -i 's/facebook::velox/bytedance::bolt/g' "$OUT_DIR/symbols.map"
 else
   N_SYMMAP=0
+fi
+
+# ----------------------------------------------------------------------------
+# 2b. Overlay hand-written Bolt-specific overrides from cpp/bolt/substrait/.
+#     Any C/C++ source/header file the user drops under cpp/bolt/substrait/
+#     (mirroring cpp/velox/substrait/<relpath>) is copied verbatim onto
+#     $OUT_DIR/substrait/<relpath>, replacing the just-generated counterpart.
+#     The override file is NOT sed-processed (it is already authored in
+#     bytedance::bolt / bolt/ form). The generated CMakeLists.txt source list
+#     is keyed by relative path, so the overlaid file takes the slot of the
+#     generated one with no duplicate compilation.
+# ----------------------------------------------------------------------------
+OVERRIDE_DIR="$GLUTEN_DIR/cpp/bolt/substrait"
+N_OVERRIDES=0
+if [[ -d "$OVERRIDE_DIR" ]]; then
+  OVERRIDE_FILES=()
+  while IFS= read -r -d '' f; do OVERRIDE_FILES+=("$f"); done < <(
+    cd "$OVERRIDE_DIR" && find . -type f \
+      \( -name '*.cc' -o -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \
+         -o -name '*.inc' -o -name '*.cu' -o -name '*.cuh' \) -print0
+  )
+  for rel in "${OVERRIDE_FILES[@]}"; do
+    rel="${rel#./}"
+    src="$OVERRIDE_DIR/$rel"
+    dest="$OUT_DIR/substrait/$rel"
+    mkdir -p "$(dirname "$dest")"
+    cp "$src" "$dest"
+    if [[ -f "$SRC_DIR/substrait/$rel" ]]; then
+      echo "  override: substrait/$rel  <-  cpp/bolt/substrait/$rel (replaces generated)"
+    else
+      echo "  override: substrait/$rel  <-  cpp/bolt/substrait/$rel (new file, no generated counterpart)"
+    fi
+    N_OVERRIDES=$((N_OVERRIDES + 1))
+  done
 fi
 
 # ----------------------------------------------------------------------------
@@ -300,6 +348,7 @@ echo "    #include \"velox/  -> #include \"bolt/   : ${N_INC_QUOTE}"
 echo "    #include <velox/  -> #include <bolt/   : ${N_INC_ANGLE}"
 echo "    facebook::velox   -> bytedance::bolt   : ${N_NS}  (+${N_SYMMAP} in symbols.map)"
 echo "    kVeloxBackendKind{\"velox\"} -> {\"bolt\"} : ${N_KIND}"
+echo "  hand-written overrides applied (cpp/bolt/substrait/) : ${N_OVERRIDES}"
 echo "  residue check:"
 echo "    files still containing facebook::velox : ${RESIDUE_NS} (expect 0)"
 echo "    lines still containing #include velox/ : ${RESIDUE_INC} (expect 0)"

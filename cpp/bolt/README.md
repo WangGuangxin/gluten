@@ -22,6 +22,26 @@ Gluten 的 `cpp/velox` 桥接层只通过上述两个面（命名空间 + includ
 | 文件 | 说明 |
 | --- | --- |
 | `CMakeLists.txt` | 由顶层 `cpp/bolt.CMakeLists.cmake`（经 `ENABLE_BOLT`/`BUILD_BOLT_BACKEND` 守卫 include）`add_subdirectory` 进入：定位 Bolt 引擎（conan `find_package(bolt)` 或 `BOLT_HOME`/`BOLT_BUILD_PATH` 源码树回退）→ 运行 `dev/gen-bolt-cpp.sh` → `add_subdirectory` 生成树，产出 `libbolt.so` |
+| `substrait/` | **手写覆盖目录**。放在此处、与 `cpp/velox/substrait/` 同相对路径的源文件，codegen 完成后会**原样**覆盖生成树同名文件（不经 sed 处理）。仅 substrait 转换层使用，详见 [`substrait/README.md`](substrait/README.md) |
+
+## Substrait 转换层覆盖机制
+
+`cpp/velox/substrait/` 是引擎耦合最重的一块（算子/类型/校验器），与上游 Velox
+存在真实语义差异，通常无法用纯字符串替换得到可用版本。为此提供一个**可见、
+手写、按需覆盖**的入口：
+
+- 把需要手写的源文件放到 [`cpp/bolt/substrait/<相对路径>`](substrait/README.md)，
+  使其与 `cpp/velox/substrait/<相对路径>` 一一对应；
+- `dev/gen-bolt-cpp.sh` 完成全树 codegen 与 sed 替换之后，会把本目录中的同名
+  文件**原样**覆盖到生成树 `${BOLT_GEN_DIR}/substrait/<相对路径>`；
+- 覆盖文件**不经过** sed 替换，需要直接以 `bytedance::bolt` 命名空间 / `bolt/`
+  include 前缀书写；
+- 生成树 `CMakeLists.txt` 的源文件列表以相对路径为键，因此覆盖文件**替换**
+  生成版的同一构建单元，**不会**出现重复符号。
+
+> 默认情况下你**不需要**使用本目录；优先依赖整树 codegen。当某个 substrait
+> 文件因 Velox/Bolt 接口分叉而无法自动生成可编译版本时，再把它提升为手写覆盖。
+> 详见 [`substrait/README.md`](substrait/README.md)。
 
 ## 与 PR #11261 的对齐
 
