@@ -21,7 +21,15 @@ Gluten 的 `cpp/velox` 桥接层只通过上述两个面（命名空间 + includ
 
 | 文件 | 说明 |
 | --- | --- |
-| `CMakeLists.txt` | 受顶层 `BUILD_BOLT_BACKEND`（默认 OFF）控制：定位 Bolt 引擎（conan `find_package(bolt)` 或 `BOLT_HOME`/`BOLT_BUILD_PATH` 源码树回退）→ 运行 `dev/gen-bolt-cpp.sh` → `add_subdirectory` 生成树，产出 `libbolt.so` |
+| `CMakeLists.txt` | 由顶层 `cpp/bolt.CMakeLists.cmake`（经 `ENABLE_BOLT`/`BUILD_BOLT_BACKEND` 守卫 include）`add_subdirectory` 进入：定位 Bolt 引擎（conan `find_package(bolt)` 或 `BOLT_HOME`/`BOLT_BUILD_PATH` 源码树回退）→ 运行 `dev/gen-bolt-cpp.sh` → `add_subdirectory` 生成树，产出 `libbolt.so` |
+
+## 与 PR #11261 的对齐
+
+除「构建期 codegen 取代提交副本」这一点外，联合编译机制与 PR #11261 完全一致：
+- conan 坐标：`bolt/<ver>@<user>/<channel>`，目标 `bolt::bolt`；
+- gluten recipe：[`cpp/conanfile.py`](../conanfile.py) 依赖 bolt 并设置 `ENABLE_BOLT`；
+- include 模式：`cpp/CMakeLists.txt` 顶部 `if(ENABLE_BOLT ...) include(bolt.CMakeLists.cmake); return()`；
+- 顶层 [`cpp/bolt.CMakeLists.cmake`](../bolt.CMakeLists.cmake) 构建 gluten-core 后再 `add_subdirectory(bolt)`。
 
 ## 替换规则（仅引擎引用）
 

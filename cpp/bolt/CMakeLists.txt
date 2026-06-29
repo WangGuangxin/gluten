@@ -31,8 +31,10 @@
 #   2. Run dev/gen-bolt-cpp.sh -> ${BOLT_GEN_DIR} (git-ignored, never committed)
 #   3. add_subdirectory(${BOLT_GEN_DIR}) -> builds libbolt.so (target `bolt`)
 #
-# Gated by BUILD_BOLT_BACKEND (default OFF) in the top-level cpp/CMakeLists.txt,
-# so the default Velox build is unaffected.
+# Gated by ENABLE_BOLT / BUILD_BOLT_BACKEND: cpp/CMakeLists.txt includes
+# cpp/bolt.CMakeLists.cmake (PR #11261 pattern), which builds gluten-core and
+# then add_subdirectory(bolt) -> this file. The default Velox build is
+# unaffected.
 # ============================================================================
 
 cmake_minimum_required(VERSION 3.16)

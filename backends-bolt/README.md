@@ -37,16 +37,23 @@ backends-velox / VeloxLikeBackend (abstract)
 | `backends-bolt/pom.xml`                                                         | 仅依赖 `backends-velox`；通过 profile 复用 velox 的 src-* 源码目录 |
 | `backends-bolt/src/main/scala/.../bolt/BoltBackend.scala`                       | `extends VeloxLikeBackend`；只覆写 `name()` |
 | `backends-bolt/src/main/resources/META-INF/gluten-components/...BoltBackend`    | SPI 标记，使 `Component.sorted()` 能发现 Bolt 后端 |
-| `cpp/bolt/CMakeLists.txt`                                                       | 受 `BUILD_BOLT_BACKEND` 控制，默认 `OFF`；定位 bolt 引擎（conan `bolt::bolt` 或 `BOLT_HOME`/`BOLT_BUILD_PATH`）→ 运行 codegen → `add_subdirectory` 生成树，产出 `libbolt.so` |
+| `cpp/CMakeLists.txt`                                                            | 顶部加守卫：`if(ENABLE_BOLT OR BUILD_BOLT_BACKEND) include(bolt.CMakeLists.cmake); return() endif()`；velox 路径逐字节不变 |
+| `cpp/bolt.CMakeLists.cmake`                                                     | Bolt 联合编译顶层 CMake（移植自 PR #11261）：构建 gluten-core 后 `add_subdirectory(bolt)` |
+| `cpp/conanfile.py`                                                              | gluten cpp 的 conan recipe（移植自 PR #11261）：依赖 `bolt/<ver>@<user>/<channel>`，设置 `ENABLE_BOLT` |
+| `cpp/bolt/CMakeLists.txt`                                                       | 定位 bolt 引擎（conan `bolt::bolt` 或 `BOLT_HOME`/`BOLT_BUILD_PATH`）→ 运行 codegen → `add_subdirectory` 生成树，产出 `libbolt.so` |
 | `cpp/bolt/README.md`                                                            | 联合编译说明（codegen-from-cpp/velox，不提交副本） |
 | `dev/gen-bolt-cpp.sh`                                                           | 构建期从 `cpp/velox` 生成 Gluten<->Bolt 桥接（仅引擎引用替换），输出到 `cpp/build/bolt_gen`（不提交） |
-| `dev/builddeps-boltbe.sh`                                                       | 联合编译入口脚本（构建/导出 bolt conan 包 → codegen → 配置编译 gluten cpp） |
+| `dev/builddeps-boltbe.sh`                                                       | 联合编译入口（折叠 PR Makefile 的 bolt-recipe / build / arrow 目标） |
+| `dev/install-conan.sh`、`dev/build_bolt_arrow.sh`                               | 移植自 PR #11261：安装 conan + 检查 GCC 版本；构建 Arrow-for-bolt Java 库 |
+| `dev/docker/Dockerfile.{centos8,ubuntu22}-bolt`                                 | 移植自 PR #11261：预装 bolt 工具链的参考镜像 |
 
 ## 构建命令
 
 ### 1. 原生侧与 bytedance/bolt 联合编译
 
 > ✅ 默认 `BUILD_BOLT_BACKEND=OFF`，不影响 velox 主线构建（velox 路径逐字节不变）。
+
+> 📖 端到端构建 + 验证步骤见 [`docs/Bolt.md`](../docs/Bolt.md)。
 
 #### 架构：从 cpp/velox 构建期生成，**不提交副本**
 
@@ -74,43 +81,68 @@ include 前缀 `bolt/`、conan 包目标 `bolt::bolt`（库 `bolt_engine`）。G
 
 #### 联合编译命令（需要 conan 工具链）
 
-前置条件：`conan` + `ninja` + C++23 工具链；首次需联网拉取 conan recipe。构建一个
-Velox 级引擎耗时数小时、占用数 GB。可使用 bolt 仓库的 `.devcontainer` / CI 引用的
-centos8-bolt 镜像。
+前置条件（与 PR #11261 一致）：GCC 10/11/12 或 Clang 16、conan 2.x、Ninja、JDK 11/17；
+首次需联网拉取 conan recipe 并编译所有缺失的第三方依赖（数小时、数 GB）。可使用
+`dev/docker/Dockerfile.centos8-bolt` 或 `dev/docker/Dockerfile.ubuntu22-bolt` 镜像。
 
-一键联合编译（A: 编译并导出 bolt 的 conan 包；B: 生成桥接；C/D: 配置并编译 gluten cpp）：
+`dev/builddeps-boltbe.sh` 把 PR #11261 根 `Makefile` 的 `bolt-recipe` / `build` /
+`arrow` 三个目标折叠成一条命令，conan 坐标与 PR **完全一致**：
+
+* bolt recipe：`name=bolt version=$BOLT_BUILD_VERSION user=$BUILD_USER channel=$BUILD_CHANNEL`
+  （从 bytedance/bolt 的 `conanfile.py` 导出，目标 `bolt::bolt`）；
+* gluten：`cpp/conanfile.py` 依赖 `bolt/<ver>@<user>/<channel>` 并设置 `ENABLE_BOLT`
+  cmake 缓存变量 → `cpp/CMakeLists.txt` 包含 `cpp/bolt.CMakeLists.cmake`（PR 的 include 模式）。
+
+一键联合编译（install_conan → bolt_recipe → conan install + cmake build）：
 
 ```bash
-# 默认 BOLT_HOME=../bolt（与 gluten 同级）；BOLT_MAKE_TARGET 默认 release_spark
+export JAVA_HOME=/path/to/jdk11
+# 默认 BOLT_HOME=../bolt（与 gluten 同级），BOLT_BUILD_VERSION=main
 ./dev/builddeps-boltbe.sh
+# 需要打包 jar 前再构建 arrow：
+./dev/builddeps-boltbe.sh --build_arrow=ON build_bolt_arrow
 ```
 
-若已有构建好的 bolt（conan 缓存或源码树），跳过重量级 conan 构建：
+可单独运行各步骤（对应 Makefile 目标）：
 
 ```bash
-# 方式一：bolt 已 export 到本地 conan 缓存（find_package(bolt) 可发现）
-./dev/builddeps-boltbe.sh --build_bolt=OFF
-
-# 方式二：源码树链接（无 conan 包），镜像 velox 的 import_library 模式
-./dev/builddeps-boltbe.sh --build_bolt=OFF \
-  --bolt_home=/path/to/bolt --bolt_build_path=/path/to/bolt/_build/Release
+./dev/builddeps-boltbe.sh install_conan            # == dev/install-conan.sh
+./dev/builddeps-boltbe.sh bolt_recipe              # == make bolt-recipe
+./dev/builddeps-boltbe.sh build_gluten_cpp_bolt    # == make release（conan install + cmake）
+./dev/builddeps-boltbe.sh build_bolt_arrow         # == make arrow
 ```
 
-等价的手工步骤：
+若已有构建好的 bolt 源码树（无 conan 包），走源码树链接回退：
 
 ```bash
-# A. 在 bolt 仓库构建 + 导出 conan 包
-cd ../bolt && make release_spark BUILD_VERSION=main && make export_base BUILD_VERSION=main && cd -
+BOLT_BUILD_PATH=/path/to/bolt/_build/Release \
+  ./dev/builddeps-boltbe.sh --build_bolt=OFF \
+  --bolt_home=/path/to/bolt
+```
 
-# B. 生成 Gluten<->Bolt 桥接源码（幂等；输出到 cpp/build/bolt_gen，不提交）
+等价的手工步骤（镜像 PR `Makefile` + `docs/velox-to-bolt-migration-guide.md`）：
+
+```bash
+# A. 安装 conan（检查 GCC 版本，配置 gnu17 profile）
+bash dev/install-conan.sh
+
+# B. 导出 bolt conan recipe（make bolt-recipe）
+bash ../bolt/scripts/install-bolt-deps.sh
+conan export ../bolt/conanfile.py --name=bolt --version=main
+
+# C. 生成 Gluten<->Bolt 桥接源码（本方案唯一与 PR 不同之处；输出到 cpp/build/bolt_gen，不提交）
 bash dev/gen-bolt-cpp.sh cpp/build/bolt_gen
 
-# C/D. 仅编译 Bolt 后端（关闭 velox）
-cmake -S cpp -B cpp/build \
-  -G Ninja \
-  -DBUILD_VELOX_BACKEND=OFF -DBUILD_BOLT_BACKEND=ON \
-  -DBOLT_HOME=../bolt -DBOLT_GEN_DIR=$PWD/cpp/build/bolt_gen -DBOLT_SKIP_CODEGEN=ON
-cmake --build cpp/build --target bolt -j
+# D. conan install + cmake 构建（make release；conanfile 设 ENABLE_BOLT）
+cd cpp
+conan install . --name=gluten --version=main -s build_type=Release --build=missing \
+  -o gluten/*:shared=True -o gluten/*:enable_hdfs=True
+cmake --preset conan-release
+cmake --build build/Release -j && cmake --build build/Release --target install
+cd -
+
+# E. 打包前构建 Arrow（make arrow）
+bash dev/build_bolt_arrow.sh
 ```
 
 构建产物输出在 `cpp/build/releases/libbolt.so`，导出与 `libvelox.so` 相同的 JNI
@@ -120,10 +152,12 @@ cmake --build cpp/build --target bolt -j
 
 | 项 | 状态 |
 | --- | --- |
-| `dev/gen-bolt-cpp.sh` 生成 + 幂等 + 替换计数（`facebook::velox`/`#include "velox/` 残留=0；backend-kind="bolt"；gluten-core include 不变） | ✅ 已在沙箱验证 |
+| `dev/gen-bolt-cpp.sh` 生成 + 幂等 + 替换计数（`facebook::velox`/`#include "velox/` 残留=0；backend-kind="bolt"；gluten-core include 不变） | ✅ 已在沙箱验证（209 文件，库源 54，残留 0/0） |
 | JVM 侧 `backends-bolt` 编译（`./build/mvn ... compile`） | ✅ 已在沙箱验证（BUILD SUCCESS） |
-| bolt `conanfile.py` recipe 可加载（`conan export`） | ✅ 已在沙箱验证（`conan 2.29.1`，导出 `bolt/main#...`） |
-| **原生联合编译产出 `libbolt.so`**（`conan install` + 构建 Velox 级引擎 + 链接） | ❌ **未能在本沙箱验证**：缺少 conan 工具链依赖（ninja/C++23/网络），且构建 Velox 级引擎耗时数小时、占用数 GB，超出沙箱能力 |
+| `cpp/CMakeLists.txt` 守卫 + `include(bolt.CMakeLists.cmake)` 路由（`-DBUILD_BOLT_BACKEND=ON` 配置） | ✅ 已在沙箱验证（cmake 3.25 进入 bolt 顶层 CMake，构建 core 后于 `find_package(glog)` 因缺依赖而停，velox 路径不受影响） |
+| 默认 velox 构建逐字节不变（bolt 仅在守卫内） | ✅ 已验证（`git diff` cpp/CMakeLists.txt 仅顶部守卫） |
+| 生成树 git-ignored（`cpp/build/`） | ✅ 已验证（`.gitignore:29 build/`） |
+| **原生联合编译产出 `libbolt.so`**（`conan install` + 构建 Velox 级引擎 + 链接） | ❌ **未能在本沙箱验证**：缺 conan/glog 等工具链依赖，且构建 Velox 级引擎耗时数小时、占用数 GB，超出沙箱能力 |
 
 > 因为 Bolt 是持续演进的 fork，少数边界情况（与上游 Velox 分叉的 API、超出
 > `velox/`→`bolt/` 前缀的头文件改名等）可能仍需在**真实工具链编译期**做少量修补。
