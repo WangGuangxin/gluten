@@ -14,25 +14,25 @@
 # limitations under the License.
 
 # ============================================================================
-# Bolt backend joint-build entry (mirrors PR #11261).
+# Top-level CMake for the Gluten <-> Bolt joint build.
 #
-# When the Bolt backend is requested, the entire cpp build is diverged into the
-# Bolt-specific top-level CMake (cpp/bolt.CMakeLists.cmake) and this file
-# returns immediately -- exactly the pattern PR #11261 used. As a result the
-# default Velox build below is byte-for-byte upstream: the guard is skipped
-# whenever Bolt is OFF.
+# This is the PR #11261 `bolt.CMakeLists.cmake` entry, included (and `return()`d
+# into) from cpp/CMakeLists.txt when ENABLE_BOLT / BUILD_BOLT_BACKEND is set. It
+# builds gluten-core and then the Gluten<->Bolt native bridge, linking the
+# external Bolt engine via the conan `bolt::bolt` target.
 #
-# ENABLE_BOLT is the flag the PR's cpp/conanfile.py toolchain sets; we also honor
-# the top-level BUILD_BOLT_BACKEND option so `cmake -DBUILD_BOLT_BACKEND=ON`
-# (used by dev/builddeps-boltbe.sh) drives the same flow.
+# DEVIATION FROM PR #11261 (the one intentional difference):
+#   The PR committed a sed-renamed wholesale copy of cpp/velox into cpp/bolt
+#   (~183 files). Here cpp/bolt/CMakeLists.txt instead GENERATES that bridge at
+#   build time from cpp/velox via dev/gen-bolt-cpp.sh (output under
+#   cpp/build/, git-ignored, never committed). Everything else -- conan
+#   coordinates (bolt/<version>@<user>/<channel>), find_package(bolt) ->
+#   bolt::bolt, the ENABLE_BOLT include pattern, the Arrow-for-bolt step -- is
+#   kept identical to the PR.
 # ============================================================================
-if(ENABLE_BOLT OR BUILD_BOLT_BACKEND)
-  include(bolt.CMakeLists.cmake)
-  return()
-endif()
 
-cmake_minimum_required(VERSION 3.16)
-message(STATUS "Building using CMake version: ${CMAKE_VERSION}")
+cmake_minimum_required(VERSION 3.25)
+message(STATUS "Building Bolt backend using CMake version: ${CMAKE_VERSION}")
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -60,41 +60,42 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS
 
 project(gluten)
 
-option(BUILD_VELOX_BACKEND "Build Velox backend" ON)
+option(BUILD_BOLT "Build bolt backend" ON)
 option(BUILD_TESTS "Build Tests" OFF)
 option(BUILD_EXAMPLES "Build Examples" OFF)
 option(BUILD_BENCHMARKS "Build Benchmarks" OFF)
+option(BUILD_PROTOBUF "Build Protobuf from Source" ON)
+option(BUILD_JEMALLOC "Build Jemalloc from Source" OFF)
 option(BUILD_TEST_UTILS "Build utils for tests/benchmarks" OFF)
 option(ENABLE_JEMALLOC_STATS "Prints Jemalloc stats for debugging" OFF)
 option(BUILD_GLOG "Build Glog from Source" OFF)
+option(USE_AVX512 "Build with AVX-512 optimizations" OFF)
+option(ENABLE_HBM "Enable HBM allocator" OFF)
 option(ENABLE_QAT "Enable QAT for de/compression" OFF)
 option(ENABLE_GCS "Enable GCS" OFF)
 option(ENABLE_S3 "Enable S3" OFF)
-option(ENABLE_HDFS "Enable HDFS" OFF)
 option(ENABLE_ORC "Enable ORC" OFF)
 option(ENABLE_ABFS "Enable ABFS" OFF)
 option(ENABLE_GPU "Enable GPU" OFF)
 option(ENABLE_ENHANCED_FEATURES "Enable enhanced features" OFF)
 
+# TODO integrate with conan options
+set(BUILD_STATIC ON)
+
 set(root_directory ${PROJECT_BINARY_DIR})
 get_filename_component(GLUTEN_HOME ${CMAKE_SOURCE_DIR} DIRECTORY)
 
-if(NOT DEFINED VELOX_HOME)
-  set(VELOX_HOME ${GLUTEN_HOME}/ep/build-velox/build/velox_ep)
-  message(STATUS "Set VELOX_HOME to ${VELOX_HOME}")
+# BOLT_HOME points at the bytedance/bolt source checkout (engine headers). It is
+# only used as an extra include root for the source-tree (non-conan) fallback in
+# cpp/bolt/CMakeLists.txt; the conan bolt::bolt package carries its own headers.
+if(NOT DEFINED BOLT_HOME)
+  if(DEFINED ENV{BOLT_HOME})
+    set(BOLT_HOME $ENV{BOLT_HOME})
+  else()
+    set(BOLT_HOME ${GLUTEN_HOME}/../bolt)
+  endif()
+  message(STATUS "Set BOLT_HOME to ${BOLT_HOME}")
 endif()
-
-if(${CMAKE_BUILD_TYPE} STREQUAL "Debug")
-  set(ARROW_HOME
-      ${VELOX_HOME}/_build/debug/CMake/resolve_dependency_modules/arrow/arrow_ep/
-  )
-else()
-  set(ARROW_HOME
-      ${VELOX_HOME}/_build/release/CMake/resolve_dependency_modules/arrow/arrow_ep
-  )
-endif()
-
-include(ResolveDependency)
 
 #
 # Compiler flags
@@ -168,24 +169,16 @@ endif()
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${KNOWN_WARNINGS}")
 
-# Keep same compile option with Velox.
-execute_process(
-  COMMAND
-    bash -c
-    "( source ${VELOX_HOME}/scripts/setup-helper-functions.sh && echo -n $(get_cxx_flags $ENV{CPU_TARGET}))"
-  OUTPUT_VARIABLE SCRIPT_CXX_FLAGS
-  RESULT_VARIABLE COMMAND_STATUS)
-if(COMMAND_STATUS EQUAL "1")
-  message(FATAL_ERROR "Unable to determine compiler flags!")
+if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fdiagnostics-color=always")
+elseif("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang"
+       OR "${CMAKE_CXX_COMPILER_ID}" STREQUAL "AppleClang")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fcolor-diagnostics")
 endif()
-
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SCRIPT_CXX_FLAGS}")
 
 #
 # Dependencies
 #
-
-include(ConfigArrow)
 
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
@@ -197,9 +190,6 @@ find_package(glog REQUIRED)
 if(BUILD_TESTS)
   set(GLUTEN_GTEST_MIN_VERSION "1.13.0")
   find_package(GTest ${GLUTEN_GTEST_MIN_VERSION} CONFIG)
-  if(NOT GTest_FOUND)
-    include(BuildGTest)
-  endif()
   include(GoogleTest)
   enable_testing()
 endif()
@@ -220,7 +210,7 @@ function(ADD_TEST_CASE TEST_NAME)
   endif()
 
   add_executable(${TEST_NAME} ${SOURCES})
-  target_link_libraries(${TEST_NAME} gluten google::glog GTest::gtest
+  target_link_libraries(${TEST_NAME} gluten bolt::bolt glog::glog GTest::gtest
                         GTest::gtest_main Threads::Threads)
   target_include_directories(${TEST_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/core)
 
@@ -251,6 +241,10 @@ if(ENABLE_QAT)
   add_definitions(-DGLUTEN_ENABLE_QAT)
 endif()
 
+if(ENABLE_ORC)
+  add_definitions(-DGLUTEN_ENABLE_ORC)
+endif()
+
 if(ENABLE_GPU)
   add_definitions(-DGLUTEN_ENABLE_GPU)
 endif()
@@ -262,6 +256,9 @@ endif()
 # Subdirectories
 add_subdirectory(core)
 
-if(BUILD_VELOX_BACKEND)
-  add_subdirectory(velox)
+# cpp/bolt/CMakeLists.txt locates the Bolt engine (find_package(bolt) ->
+# bolt::bolt, or a BOLT_HOME/BOLT_BUILD_PATH source tree), generates the bridge
+# via dev/gen-bolt-cpp.sh and builds it. See cpp/bolt/README.md.
+if(BUILD_BOLT)
+  add_subdirectory(bolt)
 endif()

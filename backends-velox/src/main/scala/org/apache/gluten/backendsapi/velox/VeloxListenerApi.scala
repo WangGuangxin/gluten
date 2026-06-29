@@ -56,8 +56,11 @@ import org.apache.commons.lang3.StringUtils
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 
-class VeloxListenerApi extends ListenerApi with Logging {
+class VeloxListenerApi(backendName: String) extends ListenerApi with Logging {
   import VeloxListenerApi._
+
+  // Keep a no-arg constructor so existing Velox callers work unchanged.
+  def this() = this(VeloxBackend.BACKEND_NAME)
 
   override def onDriverStart(sc: SparkContext, pc: PluginContext): Unit = {
     GlutenDriverEndpoint.glutenDriverEndpointRef = (new GlutenDriverEndpoint).self
@@ -226,7 +229,7 @@ class VeloxListenerApi extends ListenerApi with Logging {
     if (StringUtils.isBlank(libPath)) {
       val baseLibName = conf.get(GlutenConfig.GLUTEN_LIB_NAME)
       loader.load(s"$platformLibDir/${System.mapLibraryName(baseLibName)}")
-      loader.load(s"$platformLibDir/${System.mapLibraryName(VeloxBackend.BACKEND_NAME)}")
+      loader.load(s"$platformLibDir/${System.mapLibraryName(backendName)}")
     } else {
       // Path based load. Ignore all other loaderes.
       JniLibLoader.loadFromPath(libPath)
@@ -234,7 +237,7 @@ class VeloxListenerApi extends ListenerApi with Logging {
 
     // Initial native backend with configurations.
     NativeBackendInitializer
-      .forBackend(VeloxBackend.BACKEND_NAME)
+      .forBackend(backendName)
       .initialize(newGlobalOffHeapMemoryListener(), parseConf(conf, isDriver))
 
     // Inject backend-specific implementations to override spark classes.

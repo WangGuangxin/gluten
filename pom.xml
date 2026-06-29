@@ -2061,6 +2061,21 @@
       </properties>
     </profile>
     <profile>
+      <!-- Bolt is a thin, Velox-compatible backend that reuses backends-velox. It must be
+           activated together with the backends-velox profile, which provides the shared
+           gluten-arrow / backends-velox modules it depends on. -->
+      <id>backends-bolt</id>
+      <activation>
+        <activeByDefault>false</activeByDefault>
+      </activation>
+      <modules>
+        <module>backends-bolt</module>
+      </modules>
+      <properties>
+        <backend_type>bolt</backend_type>
+      </properties>
+    </profile>
+    <profile>
       <id>kafka</id>
       <activation>
         <activeByDefault>false</activeByDefault>
