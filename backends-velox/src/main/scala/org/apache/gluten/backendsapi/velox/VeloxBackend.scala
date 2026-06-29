@@ -52,10 +52,16 @@ import org.apache.hadoop.fs.Path
 
 import scala.util.control.Breaks.breakable
 
-class VeloxBackend extends SubstraitBackend {
+/**
+ * Base backend for Velox and Velox-derivative engines (e.g. Bolt). It holds all the shared logic
+ * and factory methods while leaving the concrete backend identity ([[name]]) abstract so that
+ * derivative backends can reuse the implementation by only supplying their own name. The Velox*Api
+ * implementations are returned by default; subclasses may override them only when a genuine
+ * behavioral difference is required.
+ */
+abstract class VeloxLikeBackend extends SubstraitBackend {
   import VeloxBackend._
 
-  override def name(): String = VeloxBackend.BACKEND_NAME
   override def info(): Map[String, String] = {
     Map(
       "velox_branch" -> VELOX_BRANCH,
@@ -67,18 +73,24 @@ class VeloxBackend extends SubstraitBackend {
   override def transformerApi(): TransformerApi = new VeloxTransformerApi
   override def validatorApi(): ValidatorApi = new VeloxValidatorApi
   override def metricsApi(): MetricsApi = new VeloxMetricsApi
-  override def listenerApi(): ListenerApi = new VeloxListenerApi
+  // Pass the concrete backend name so the right native lib (lib<name>.so) is loaded
+  // and the matching native backend is initialized.
+  override def listenerApi(): ListenerApi = new VeloxListenerApi(name())
   override def ruleApi(): RuleApi = new VeloxRuleApi
   override def settings(): BackendSettingsApi = VeloxBackendSettings
   override def convFuncOverride(): ConventionFunc.Override = new ConvFunc()
   override def costers(): Seq[LongCoster] = Seq(LegacyCoster, RoughCoster)
 }
 
+class VeloxBackend extends VeloxLikeBackend {
+  override def name(): String = VeloxBackend.BACKEND_NAME
+}
+
 object VeloxBackend {
   val BACKEND_NAME: String = "velox"
   val CONF_PREFIX: String = GlutenConfig.prefixOf(BACKEND_NAME)
 
-  private class ConvFunc() extends ConventionFunc.Override {
+  private[velox] class ConvFunc() extends ConventionFunc.Override {
     override def batchTypeOf: PartialFunction[SparkPlan, Convention.BatchType] = {
       case a: AdaptiveSparkPlanExec if a.supportsColumnar =>
         VeloxBatchType

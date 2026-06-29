@@ -43,6 +43,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS
 project(gluten)
 
 option(BUILD_VELOX_BACKEND "Build Velox backend" ON)
+option(BUILD_BOLT_BACKEND "Build Bolt backend (scaffold; proprietary engine integration required)" OFF)
 option(BUILD_TESTS "Build Tests" OFF)
 option(BUILD_EXAMPLES "Build Examples" OFF)
 option(BUILD_BENCHMARKS "Build Benchmarks" OFF)
@@ -249,4 +250,11 @@ add_subdirectory(core)
 
 if(BUILD_VELOX_BACKEND)
   add_subdirectory(velox)
+endif()
+
+if(BUILD_BOLT_BACKEND)
+  # Bolt reuses the Velox JVM stack (VeloxLikeBackend) and registers a "bolt"
+  # runtime kind via the same Runtime::registerFactory contract as Velox.
+  # The proprietary engine source is not bundled; see cpp/bolt/compute/BoltBackend.cc.
+  add_subdirectory(bolt)
 endif()
