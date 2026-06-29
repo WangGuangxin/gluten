@@ -16,6 +16,7 @@
  */
 package org.apache.gluten.backendsapi.bolt
 
+import org.apache.gluten.backendsapi.SparkPlanExecApi
 import org.apache.gluten.backendsapi.velox.VeloxLikeBackend
 import org.apache.gluten.config.GlutenConfig
 
@@ -30,6 +31,10 @@ import org.apache.gluten.config.GlutenConfig
  */
 class BoltBackend extends VeloxLikeBackend {
   override def name(): String = BoltBackend.BACKEND_NAME
+
+  // Bolt customizes a few expression transformers (sequence / map_from_arrays dedup policy)
+  // on top of the inherited Velox implementation; everything else stays inherited.
+  override def sparkPlanExecApi(): SparkPlanExecApi = new BoltSparkPlanExecApi
 }
 
 object BoltBackend {

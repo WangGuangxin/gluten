@@ -101,6 +101,27 @@ object RaiseErrorRestrictions extends ExpressionRestrictions {
   override val restrictionMessages: Array[String] = Array(ONLY_SUPPORT_ERROR_MESSAGE)
 }
 
+// Bolt-specific restriction, consumed by BoltSparkPlanExecApi#extraExpressionConverter.
+// Lives here (the shared restriction file) so the thin Bolt backend can reuse it without a
+// separate restrictions file. Intentionally NOT added to listAllRestrictions() below so the
+// Velox function-support docs stay unchanged.
+// NOTE: `FIRST_WIN` is a ByteDance-internal Spark `MapKeyDedupPolicy` value that does not exist
+// in OSS Spark (only EXCEPTION / LAST_WIN), so it is referenced by its literal name instead of
+// `SQLConf.MapKeyDedupPolicy.FIRST_WIN` to keep this compiling against OSS Spark.
+object MapFromArraysRestrictions extends ExpressionRestrictions {
+  val FIRST_WIN_POLICY_NAME: String = "FIRST_WIN"
+
+  val NOT_SUPPORT_FIRST_WIN_DEDUP_POLICY: String =
+    s"${ExpressionNames.MAP_FROM_ARRAYS} don't supports ${SQLConf.MAP_KEY_DEDUP_POLICY.key} = " +
+      s"$FIRST_WIN_POLICY_NAME in Bolt"
+
+  override val functionName: String = ExpressionNames.MAP_FROM_ARRAYS
+
+  override val restrictionMessages: Array[String] = Array(
+    NOT_SUPPORT_FIRST_WIN_DEDUP_POLICY
+  )
+}
+
 object ExpressionRestrictions {
   // Called by gen-function-support-docs.py to get all restrictions.
   def listAllRestrictions(): Array[ExpressionRestrictions] = {

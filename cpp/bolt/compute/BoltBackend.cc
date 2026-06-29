@@ -47,6 +47,17 @@
 // The factory bodies intentionally throw `GlutenException("not implemented")`
 // to make it impossible to silently run queries against an empty engine. The
 // proprietary Bolt engine source must replace these stubs (see TODO markers).
+//
+// TODO(bolt native): the JVM-side function offload added alongside this scaffold
+// (sequence, map_from_arrays, map_from_entries, format_number) requires matching
+// native support in the Bolt plan validator. In the proprietary engine's
+// `cpp/bolt/substrait/SubstraitToBoltPlanValidator.cc` these functions must be
+// registered / allow-listed (e.g. removed from the validator `kBlackList`) so the
+// substrait plans produced by BoltSparkPlanExecApi pass validation:
+//   * sequence          -- only non-timestamp inputs (JVM falls back otherwise)
+//   * map_from_arrays   -- LAST_WIN dedup only (JVM falls back on FIRST_WIN)
+//   * map_from_entries  -- null/duplicate-key semantics per Spark
+//   * format_number
 // =============================================================================
 
 namespace gluten {
