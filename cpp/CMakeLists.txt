@@ -43,7 +43,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS
 project(gluten)
 
 option(BUILD_VELOX_BACKEND "Build Velox backend" ON)
-option(BUILD_BOLT_BACKEND "Build Bolt backend (scaffold; proprietary engine integration required)" OFF)
+option(BUILD_BOLT_BACKEND "Build Bolt backend (joint build with bytedance/bolt; bridge generated from cpp/velox)" OFF)
 option(BUILD_TESTS "Build Tests" OFF)
 option(BUILD_EXAMPLES "Build Examples" OFF)
 option(BUILD_BENCHMARKS "Build Benchmarks" OFF)
@@ -65,6 +65,16 @@ get_filename_component(GLUTEN_HOME ${CMAKE_SOURCE_DIR} DIRECTORY)
 if(NOT DEFINED VELOX_HOME)
   set(VELOX_HOME ${GLUTEN_HOME}/ep/build-velox/build/velox_ep)
   message(STATUS "Set VELOX_HOME to ${VELOX_HOME}")
+endif()
+
+if(BUILD_BOLT_BACKEND AND NOT DEFINED BOLT_HOME)
+  if(DEFINED ENV{BOLT_HOME})
+    set(BOLT_HOME $ENV{BOLT_HOME})
+  else()
+    # bytedance/bolt is checked out as a sibling of the gluten repo by default.
+    set(BOLT_HOME ${GLUTEN_HOME}/../bolt)
+  endif()
+  message(STATUS "Set BOLT_HOME to ${BOLT_HOME}")
 endif()
 
 if(${CMAKE_BUILD_TYPE} STREQUAL "Debug")
@@ -154,18 +164,35 @@ endif()
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${KNOWN_WARNINGS}")
 
-# Keep same compile option with Velox.
-execute_process(
-  COMMAND
-    bash -c
-    "( source ${VELOX_HOME}/scripts/setup-helper-functions.sh && echo -n $(get_cxx_flags $ENV{CPU_TARGET}))"
-  OUTPUT_VARIABLE SCRIPT_CXX_FLAGS
-  RESULT_VARIABLE COMMAND_STATUS)
-if(COMMAND_STATUS EQUAL "1")
-  message(FATAL_ERROR "Unable to determine compiler flags!")
+# Keep same compile option with the native engine (Velox by default; Bolt when
+# building the Bolt backend without Velox). The default Velox path below is
+# unchanged: when BUILD_VELOX_BACKEND is ON we source Velox's helper exactly as
+# before. Only a Bolt-only build (Velox OFF) switches to Bolt's helper if it
+# provides one; Bolt otherwise sets its arch flags via its conan toolchain.
+if(BUILD_VELOX_BACKEND)
+  set(SETUP_HELPER_SCRIPT ${VELOX_HOME}/scripts/setup-helper-functions.sh)
+elseif(BUILD_BOLT_BACKEND
+       AND EXISTS ${BOLT_HOME}/scripts/setup-helper-functions.sh)
+  set(SETUP_HELPER_SCRIPT ${BOLT_HOME}/scripts/setup-helper-functions.sh)
 endif()
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SCRIPT_CXX_FLAGS}")
+if(DEFINED SETUP_HELPER_SCRIPT)
+  execute_process(
+    COMMAND
+      bash -c
+      "( source ${SETUP_HELPER_SCRIPT} && echo -n $(get_cxx_flags $ENV{CPU_TARGET}))"
+    OUTPUT_VARIABLE SCRIPT_CXX_FLAGS
+    RESULT_VARIABLE COMMAND_STATUS)
+  if(COMMAND_STATUS EQUAL "1")
+    message(FATAL_ERROR "Unable to determine compiler flags!")
+  endif()
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SCRIPT_CXX_FLAGS}")
+else()
+  message(
+    STATUS
+      "No native-engine setup-helper script found; relying on toolchain/conan "
+      "provided arch flags (Bolt-only build).")
+endif()
 
 #
 # Dependencies
@@ -253,8 +280,10 @@ if(BUILD_VELOX_BACKEND)
 endif()
 
 if(BUILD_BOLT_BACKEND)
-  # Bolt reuses the Velox JVM stack (VeloxLikeBackend) and registers a "bolt"
-  # runtime kind via the same Runtime::registerFactory contract as Velox.
-  # The proprietary engine source is not bundled; see cpp/bolt/compute/BoltBackend.cc.
+  # Bolt reuses the Velox JVM stack (VeloxLikeBackend) and the same JNI/Runtime
+  # contract. The native bridge is GENERATED from cpp/velox at build time by
+  # dev/gen-bolt-cpp.sh and linked against the external bytedance/bolt engine
+  # (conan bolt::bolt, or a BOLT_HOME/BOLT_BUILD_PATH source tree). No copy of
+  # cpp/velox is committed; see cpp/bolt/README.md and cpp/bolt/CMakeLists.txt.
   add_subdirectory(bolt)
 endif()
