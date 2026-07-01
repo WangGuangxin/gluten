@@ -77,7 +77,7 @@ object ToJsonRestrictions extends ExpressionRestrictions {
 object MapFromArraysRestrictions extends ExpressionRestrictions {
   val NOT_SUPPORT_FIRST_WIN_DEDUP_POLICY: String =
     s"${ExpressionNames.MAP_FROM_ARRAYS} don't supports ${SQLConf.MAP_KEY_DEDUP_POLICY.key} = " +
-      s"${SQLConf.MapKeyDedupPolicy.FIRST_WIN.toString} in Bolt"
+      s"FIRST_WIN in Bolt"
 
   override val functionName: String = ExpressionNames.MAP_FROM_ARRAYS
 
