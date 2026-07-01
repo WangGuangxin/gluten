@@ -908,7 +908,7 @@ class BoltSparkPlanExecApi extends SparkPlanExecApi {
     expr match {
       case _: MapFromArrays =>
         val policy = SQLConf.get.getConf(SQLConf.MAP_KEY_DEDUP_POLICY)
-        if (policy == SQLConf.MapKeyDedupPolicy.FIRST_WIN.toString) {
+        if (policy == "FIRST_WIN") {
           GlutenExceptionUtil.throwsNotFullySupported(
             ExpressionNames.MAP_FROM_ARRAYS,
             MapFromArraysRestrictions.NOT_SUPPORT_FIRST_WIN_DEDUP_POLICY)
