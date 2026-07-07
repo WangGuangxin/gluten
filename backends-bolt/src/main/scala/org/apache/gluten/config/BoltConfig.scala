@@ -117,7 +117,7 @@ class BoltConfig(conf: SQLConf) extends GlutenConfig(conf) {
   def maxShuffleBatchByteSize: Int = getConf(COLUMNAR_MAX_SHUFFLE_BATCH_BYTE_SIZE)
 
   def shuffleInsideBolt: Boolean =
-    getConf(GLUTEN_SHUFFLE_INSIDE_BOLT)
+    getConf(USE_BOLT_MEMORY_MANAGER) && getConf(GLUTEN_SHUFFLE_INSIDE_BOLT)
 
   def orcUseColumnNames: Boolean = getConf(ORC_USE_COLUMN_NAMES)
 
@@ -890,7 +890,7 @@ object BoltConfig extends ConfigRegistry {
       .internal()
       .doc("run shuffle inside bolt")
       .booleanConf
-      .createWithDefault(false)
+      .createWithDefault(true)
 
   val COLUMNAR_MAX_BATCH_SIZE =
     buildOrReplaceConf("spark.gluten.sql.columnar.maxBatchSize").intConf

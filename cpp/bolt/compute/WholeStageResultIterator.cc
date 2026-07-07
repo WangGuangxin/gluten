@@ -29,6 +29,7 @@
 #include "bolt/connectors/hive/HiveConnectorSplit.h"
 #include "bolt/exec/PlanNodeStats.h"
 #include "bolt/shuffle/sparksql/ShuffleWriterNode.h"
+#include "bolt/shuffle/sparksql/ShuffleReaderNode.h"
 #include "connectors/hive/PaimonConnectorSplit.h"
 #include "compute/paimon/PaimonPlanUtils.h"
 
@@ -557,6 +558,8 @@ void WholeStageResultIterator::getOrderedNodeIds(
   if (std::dynamic_pointer_cast<const bytedance::bolt::shuffle::sparksql::SparkShuffleWriterNode>(planNode) !=
       nullptr) {
     omittedNodeIds_.insert(planNode->id());
+  } else {
+    nodeIds.emplace_back(planNode->id());
   }
   nodeIds.emplace_back(planNode->id());
 }
