@@ -81,7 +81,7 @@ class GlutenConan(ConanFile):
         self.tool_requires("protobuf/<host_version>")
         self.test_requires("gtest/1.17.0")
         self.test_requires("jemalloc/5.3.0")
-        self.test_requires("duckdb/0.8.1")
+        self.test_requires("duckdb/1.1.3")
 
     def layout(self):
         cmake_layout(self, build_folder='build')
