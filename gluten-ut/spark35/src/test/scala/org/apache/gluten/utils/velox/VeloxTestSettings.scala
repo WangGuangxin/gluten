@@ -154,6 +154,7 @@ class VeloxTestSettings extends BackendTestSettings {
   enableSuite[GlutenDecimalExpressionSuite]
   enableSuite[GlutenDecimalPrecisionSuite]
   enableSuite[GlutenGeneratorExpressionSuite]
+  enableSuite[GlutenBroadcastNestedLoopJoinFullOuterSuite]
   enableSuite[GlutenHashExpressionsSuite]
   enableSuite[GlutenHigherOrderFunctionsSuite]
   enableSuite[GlutenIntervalExpressionsSuite]
