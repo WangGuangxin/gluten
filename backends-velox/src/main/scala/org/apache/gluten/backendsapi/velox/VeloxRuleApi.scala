@@ -52,6 +52,7 @@ object VeloxRuleApi {
    */
   private def injectSpark(injector: SparkInjector): Unit = {
     // Inject the regular Spark rules directly.
+    injector.injectQueryStagePrepRule(_ => VeloxBroadcastNestedLoopJoinRewriteRule())
     injector.injectOptimizerRule(CollectRewriteRule.apply)
     injector.injectOptimizerRule(HLLRewriteRule.apply)
     injector.injectOptimizerRule(CollapseGetJsonObjectExpressionRule.apply)
@@ -85,6 +86,7 @@ object VeloxRuleApi {
         BloomFilterMightContainJointRewriteRule.apply(
           c.session,
           c.caller.isBloomFilterStatFunction()))
+    injector.injectPre(_ => VeloxBroadcastNestedLoopJoinRewriteRule())
 
     // Legacy: Pre-transform rules.
     injector.injectPreTransform(_ => RemoveTransitions)

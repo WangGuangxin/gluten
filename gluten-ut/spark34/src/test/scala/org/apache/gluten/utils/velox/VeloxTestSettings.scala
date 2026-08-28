@@ -148,6 +148,7 @@ class VeloxTestSettings extends BackendTestSettings {
     .excludeGlutenTest("from_unixtime")
   enableSuite[GlutenDecimalExpressionSuite]
   enableSuite[GlutenDecimalPrecisionSuite]
+  enableSuite[GlutenBroadcastNestedLoopJoinFullOuterSuite]
   enableSuite[GlutenGeneratorExpressionSuite]
   enableSuite[GlutenHashExpressionsSuite]
   enableSuite[GlutenHigherOrderFunctionsSuite]
