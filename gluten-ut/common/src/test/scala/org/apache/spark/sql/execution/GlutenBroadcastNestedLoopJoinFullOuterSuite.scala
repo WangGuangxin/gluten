@@ -33,12 +33,14 @@ import scala.reflect.ClassTag
  * Spark-version-agnostic tests for the full outer `BroadcastNestedLoopJoinExec` rewrite. These
  * cases only exercise Gluten/Velox behavior and vanilla Spark SQL APIs, so they live in the shared
  * `gluten-ut` common test module and run against every supported Spark version instead of being
- * pinned to a single version-specific suite.
+ * pinned to a single version-specific suite. Concrete suites live in the Spark-version-specific
+ * `gluten-ut` modules so test discovery only instantiates them when backend components are present
+ * on the classpath.
  *
  * The full outer BNLJ rewrite is a Velox backend feature, hence each test is guarded with
  * `assumeVeloxBackend()` so the ClickHouse backend skips them.
  */
-class GlutenBroadcastNestedLoopJoinFullOuterSuite
+abstract class GlutenBroadcastNestedLoopJoinFullOuterSuiteBase
   extends GlutenSQLTestsTrait
   with AdaptiveSparkPlanHelper {
   import testImplicits._
