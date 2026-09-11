@@ -89,6 +89,8 @@ class VeloxConfig(conf: SQLConf) extends GlutenConfig(conf) {
 
   def veloxPreferredBatchBytes: Long = getConf(COLUMNAR_VELOX_PREFERRED_BATCH_BYTES)
 
+  def enableRddScan: Boolean = getConf(COLUMNAR_VELOX_RDD_SCAN_ENABLED)
+
   def cudfEnableTableScan: Boolean = getConf(CUDF_ENABLE_TABLE_SCAN)
 
   def cudfEnableValidation: Boolean = getConf(CUDF_ENABLE_VALIDATION)
@@ -96,9 +98,6 @@ class VeloxConfig(conf: SQLConf) extends GlutenConfig(conf) {
   def cudfBatchSize: Int = getConf(CUDF_BATCH_SIZE)
 
   def cudfShuffleMaxPrefetchBytes: Long = getConf(CUDF_SHUFFLE_MAX_PREFETCH_BYTES)
-
-  def orcUseColumnNames: Boolean = getConf(ORC_USE_COLUMN_NAMES) &&
-    !conf.getConfString(GlutenConfig.SPARK_ORC_FORCE_POSITIONAL_EVOLUTION, "false").toBoolean
 
   def parquetUseColumnNames: Boolean = getConf(PARQUET_USE_COLUMN_NAMES)
 
@@ -111,6 +110,12 @@ class VeloxConfig(conf: SQLConf) extends GlutenConfig(conf) {
 
   def valueStreamDynamicFilterEnabled: Boolean =
     getConf(VALUE_STREAM_DYNAMIC_FILTER_ENABLED)
+
+  def hashProbeBloomFilterBypassMinRows: Int = getConf(HASH_PROBE_BLOOM_FILTER_BYPASS_MIN_ROWS)
+
+  def hashProbeBloomFilterBypassMinPct: Int = getConf(HASH_PROBE_BLOOM_FILTER_BYPASS_MIN_PCT)
+
+  def scanBloomFilterPushdownEnabled: Boolean = getConf(SCAN_BLOOM_FILTER_PUSHDOWN_ENABLED)
 
   def enableTimestampNtzValidation: Boolean = getConf(ENABLE_TIMESTAMP_NTZ_VALIDATION)
 
@@ -282,6 +287,15 @@ object VeloxConfig extends ConfigRegistry {
       .doc("The maximum size of a single spill file created")
       .bytesConf(ByteUnit.BYTE)
       .createWithDefaultString("1GB")
+
+  val COLUMNAR_VELOX_SPILL_NUM_MAX_MERGE_FILES =
+    buildConf("spark.gluten.sql.columnar.backend.velox.spillNumMaxMergeFiles")
+      .doc(
+        "The max number of files to merge at a time when merging sorted files " +
+          "into a single ordered stream. 0 means unlimited.")
+      .intConf
+      .checkValue(_ >= 0, "must be non-negative")
+      .createWithDefault(0)
 
   val COLUMNAR_VELOX_SPILL_FILE_SYSTEM =
     buildConf("spark.gluten.sql.columnar.backend.velox.spillFileSystem")
@@ -532,6 +546,29 @@ object VeloxConfig extends ConfigRegistry {
       .booleanConf
       .createWithDefault(false)
 
+  val HASH_PROBE_BLOOM_FILTER_BYPASS_MIN_ROWS =
+    buildConf("spark.gluten.sql.columnar.backend.velox.hashProbe.bloomFilter.bypassMinRows")
+      .doc(
+        "Number of probe rows used to decide whether to bypass the build-side Bloom filter " +
+          "for left outer, existence, and left anti joins.")
+      .intConf
+      .checkValue(_ >= 0, "The minimum number of rows must not be negative")
+      .createWithDefault(0)
+
+  val HASH_PROBE_BLOOM_FILTER_BYPASS_MIN_PCT =
+    buildConf("spark.gluten.sql.columnar.backend.velox.hashProbe.bloomFilter.bypassMinPct")
+      .doc(
+        "Bypass the build-side Bloom filter when its acceptance percentage reaches this value.")
+      .intConf
+      .checkValue(value => value >= 0 && value <= 100, "The percentage must be in [0, 100]")
+      .createWithDefault(85)
+
+  val SCAN_BLOOM_FILTER_PUSHDOWN_ENABLED =
+    buildStaticConf("spark.gluten.sql.columnar.backend.velox.scan.bloomFilterPushdown.enabled")
+      .doc("Whether to push Bloom filters into Velox scans.")
+      .booleanConf
+      .createWithDefault(false)
+
   val COLUMNAR_VELOX_FILE_HANDLE_CACHE_ENABLED =
     buildStaticConf("spark.gluten.sql.columnar.backend.velox.fileHandleCacheEnabled")
       .doc(
@@ -665,6 +702,16 @@ object VeloxConfig extends ConfigRegistry {
         "If true, will add a trim node " +
           "which has the same semantic as vanilla Spark to CAST-from-varchar." +
           "Otherwise, do nothing.")
+      .booleanConf
+      .createWithDefault(false)
+
+  val DECIMAL_TO_FLOAT_HIGH_PRECISION_CAST_ENABLED =
+    buildConf("spark.gluten.velox.decimalToFloatHighPrecisionCastEnabled")
+      .doc(
+        "If true, enables high-precision casts from DECIMAL to REAL/DOUBLE in Velox, " +
+          "which match vanilla Spark for values that cannot be represented exactly by " +
+          "floating-point arithmetic. Disabled by default because it is slower than the " +
+          "default conversion; enable it if precision matters more than throughput.")
       .booleanConf
       .createWithDefault(false)
 
@@ -825,7 +872,7 @@ object VeloxConfig extends ConfigRegistry {
       .createWithDefault(false)
 
   val CUDF_ENABLE_VALIDATION =
-    buildStaticConf("spark.gluten.sql.columnar.backend.velox.cudf.enableValidation")
+    buildConf("spark.gluten.sql.columnar.backend.velox.cudf.enableValidation")
       .doc(
         "Heuristics you can apply to validate a cuDF/GPU plan and only offload when " +
           "the entire stage can be fully and profitably executed on GPU")
@@ -895,6 +942,16 @@ object VeloxConfig extends ConfigRegistry {
       .bytesConf(ByteUnit.BYTE)
       .createWithDefaultString("10MB")
 
+  val COLUMNAR_VELOX_RDD_SCAN_ENABLED =
+    buildConf("spark.gluten.sql.columnar.backend.velox.rddScan.enabled")
+      .doc(
+        "When true, offload RDDScanExec to Velox by converting the RDD[InternalRow] into" +
+          " columnar batches through the native row-to-columnar path. Schemas that are not" +
+          " supported by the Arrow export path (e.g. map or interval types) fall back to" +
+          " vanilla Spark.")
+      .booleanConf
+      .createWithDefault(true)
+
   val VELOX_MAX_COMPILED_REGEXES =
     buildConf("spark.gluten.sql.columnar.backend.velox.maxCompiledRegexes")
       .doc(
@@ -903,14 +960,8 @@ object VeloxConfig extends ConfigRegistry {
       .intConf
       .createWithDefault(100)
 
-  val ORC_USE_COLUMN_NAMES =
-    buildConf("spark.gluten.sql.columnar.backend.velox.orcUseColumnNames")
-      .doc("Maps table field names to file field names using names, not indices for ORC files.")
-      .booleanConf
-      .createWithDefault(true)
-
   val PARQUET_USE_COLUMN_NAMES =
-    buildConf("spark.gluten.sql.columnar.backend.velox.parquetUseColumnNames")
+    buildConf(GlutenConfig.VELOX_PARQUET_USE_COLUMN_NAMES)
       .doc("Maps table field names to file field names using names, not indices for Parquet files.")
       .booleanConf
       .createWithDefault(true)
