@@ -16,38 +16,41 @@
  */
 package org.apache.spark.sql.execution
 
-import org.apache.gluten.config.GlutenConfig
+import org.apache.gluten.config.{GlutenConfig, VeloxConfig}
 import org.apache.gluten.execution.{BroadcastNestedLoopJoinExecTransformer, SortMergeJoinExecTransformer}
 import org.apache.gluten.utils.BackendTestUtils
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.{Dataset, GlutenSQLTestsTrait, Row}
-import org.apache.spark.sql.catalyst.plans.FullOuter
+import org.apache.spark.sql.{Dataset, GlutenQueryTest, Row}
+import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, FullOuter}
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, AdaptiveSparkPlanHelper}
 import org.apache.spark.sql.execution.joins.BroadcastNestedLoopJoinExec
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.test.SharedSparkSession
 
 import scala.reflect.ClassTag
 
 /**
- * Spark-version-agnostic tests for the full outer `BroadcastNestedLoopJoinExec` rewrite. These
- * cases only exercise Gluten/Velox behavior and vanilla Spark SQL APIs, so they live in the shared
- * `gluten-ut` common test module and run against every supported Spark version instead of being
- * pinned to a single version-specific suite. Concrete suites live in the Spark-version-specific
- * `gluten-ut` modules so test discovery only instantiates them when backend components are present
- * on the classpath.
+ * Tests for the Velox full outer `BroadcastNestedLoopJoinExec` rewrite.
  *
  * The full outer BNLJ rewrite is a Velox backend feature, hence each test is guarded with
  * `assumeVeloxBackend()` so the ClickHouse backend skips them.
  */
-abstract class GlutenBroadcastNestedLoopJoinFullOuterSuiteBase
-  extends GlutenSQLTestsTrait
+class GlutenBroadcastNestedLoopJoinFullOuterSuite
+  extends GlutenQueryTest
+  with SharedSparkSession
   with AdaptiveSparkPlanHelper {
   import testImplicits._
 
   // Disable the forced shuffled hash join rewrite so explicit join hints retain their semantics.
-  override def sparkConf: SparkConf = {
+  override protected def sparkConf: SparkConf = {
     super.sparkConf
+      .set("spark.plugins", "org.apache.gluten.GlutenPlugin")
+      .set("spark.default.parallelism", "1")
+      .set("spark.memory.offHeap.enabled", "true")
+      .set("spark.memory.offHeap.size", "1024MB")
+      .set("spark.ui.enabled", "false")
+      .set(GlutenConfig.GLUTEN_UI_ENABLED.key, "false")
       .set(GlutenConfig.COLUMNAR_FORCE_SHUFFLED_HASH_JOIN_ENABLED.key, "false")
   }
 
@@ -105,7 +108,23 @@ abstract class GlutenBroadcastNestedLoopJoinFullOuterSuiteBase
     )
   }
 
-  testGluten("Full outer BroadcastNestedLoopJoinExec should be rewritten into supported stages") {
+  private def assertNativeExistenceJoin(df: Dataset[_]): Unit = {
+    val plan = materializePlan(df)
+    val existenceJoinCount = plan.collect {
+      case bnlj: BroadcastNestedLoopJoinExecTransformer =>
+        bnlj.joinType match {
+          case ExistenceJoin(_) => 1
+          case _ => 0
+        }
+    }.sum
+    assert(
+      existenceJoinCount === 1,
+      s"Expected exactly one native ExistenceJoin in the rewritten plan, but found " +
+        s"$existenceJoinCount:\n${plan.treeString}"
+    )
+  }
+
+  test("Full outer BroadcastNestedLoopJoinExec should be rewritten into supported stages") {
     assumeVeloxBackend()
     val df1 = spark.range(4).select($"id".as("k1"))
     val df2 = spark.range(3).select($"id".as("k2"))
@@ -123,6 +142,7 @@ abstract class GlutenBroadcastNestedLoopJoinFullOuterSuiteBase
           assertPlanCount[BroadcastNestedLoopJoinExecTransformer](
             fullOuterJoin,
             expectedCount = 2)
+          assertNativeExistenceJoin(fullOuterJoin)
           checkAnswer(
             fullOuterJoin,
             Seq(
@@ -136,7 +156,46 @@ abstract class GlutenBroadcastNestedLoopJoinFullOuterSuiteBase
     }
   }
 
-  testGluten(
+  test(
+    "Full outer BNLJ rewrite should use existence join for high-cardinality matches") {
+    assumeVeloxBackend()
+    val left = (Seq.fill(100)(1) :+ 2).toDF("k1")
+    val right = (Seq.fill(100)(1) :+ 0).toDF("k2")
+
+    withSQLConf(
+      SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key -> Long.MaxValue.toString,
+      SQLConf.EXCHANGE_REUSE_ENABLED.key -> "true",
+      SQLConf.ANSI_ENABLED.key -> "false"
+    ) {
+      val fullOuterJoin = left.join(right.hint("broadcast"), $"k1" <= $"k2", "full_outer")
+      assertNoSparkFullOuterBNLJ(fullOuterJoin)
+      assertNativeExistenceJoin(fullOuterJoin)
+      assert(fullOuterJoin.count() === 10002)
+    }
+  }
+
+  test("Full outer BNLJ rewrite should be disabled by a negative threshold") {
+    assumeVeloxBackend()
+    val left = spark.range(4).select($"id".as("k1"))
+    val right = spark.range(3).select($"id".as("k2"))
+
+    withSQLConf(
+      VeloxConfig.VELOX_BROADCAST_NESTED_LOOP_JOIN_FULL_OUTER_REWRITE_THRESHOLD.key -> "-1",
+      SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key -> Long.MaxValue.toString
+    ) {
+      val fullOuterJoin = left.hint("broadcast").join(right, $"k1" < $"k2", "full_outer")
+      val plan = materializePlan(fullOuterJoin)
+      assert(
+        plan.exists {
+          case bnlj: BroadcastNestedLoopJoinExec if bnlj.joinType == FullOuter => true
+          case _ => false
+        },
+        s"Expected the original full outer BNLJ when the rewrite is disabled:\n${plan.treeString}"
+      )
+    }
+  }
+
+  test(
     "Full outer BroadcastNestedLoopJoin rewrite should preserve null semantics for equals") {
     assumeVeloxBackend()
     val df1 = Seq[java.lang.Integer](null, 1, 2, null).toDF("k1")
@@ -166,7 +225,7 @@ abstract class GlutenBroadcastNestedLoopJoinFullOuterSuiteBase
     }
   }
 
-  testGluten(
+  test(
     "Full outer BNLJ rewrite should preserve null semantics for null-safe equals") {
     assumeVeloxBackend()
     val df1 = Seq[java.lang.Integer](null, 1, 2, null).toDF("k1")

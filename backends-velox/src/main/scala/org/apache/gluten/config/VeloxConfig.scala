@@ -248,8 +248,9 @@ object VeloxConfig extends ConfigRegistry {
       "spark.gluten.sql.columnar.backend.velox.broadcastNLJ.fullOuterRewriteThreshold")
       .doc(
         "Maximum per-side plan size in bytes for rewriting a full outer broadcast nested loop " +
-          "join into two outer joins plus union. The rewrite is applied only when both sides " +
-          "have known statistics and each side is at or below this threshold.")
+          "join into a left outer join and an existence join followed by union. The rewrite is " +
+          "applied only when both sides have known statistics and each side is at or below this " +
+          "threshold. Set to -1 to disable the rewrite.")
       .bytesConf(ByteUnit.BYTE)
       .createWithDefaultString("10MB")
 

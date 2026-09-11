@@ -18,9 +18,9 @@ package org.apache.gluten.extension
 
 import org.apache.gluten.config.VeloxConfig
 
-import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, AttributeReference, Expression, IsNull, Literal, NamedExpression}
+import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, AttributeReference, Expression, Literal, Not}
 import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight}
-import org.apache.spark.sql.catalyst.plans.{FullOuter, LeftOuter, RightOuter}
+import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, FullOuter, LeftOuter}
 import org.apache.spark.sql.catalyst.plans.logical.Join
 import org.apache.spark.sql.catalyst.plans.physical.IdentityBroadcastMode
 import org.apache.spark.sql.catalyst.rules.Rule
@@ -34,15 +34,22 @@ import org.apache.spark.sql.types.BooleanType
  * Rewrites `BroadcastNestedLoopJoinExec(FullOuter)` into a union of two nested-loop joins that
  * Velox already supports natively:
  *   1. left outer join to produce matches plus unmatched streamed-side rows
- *   2. an outer join with a synthetic non-null marker on the opposite side to identify unmatched
- *      broadcast-side rows without relying on data columns being non-null
+ *   2. an existence join, with the original broadcast side streamed, to identify its unmatched rows
  */
 case class VeloxBroadcastNestedLoopJoinRewriteRule() extends Rule[SparkPlan] {
-  override def apply(plan: SparkPlan): SparkPlan = plan.transformUp {
-    case bnlj: BroadcastNestedLoopJoinExec
-        if bnlj.joinType == FullOuter && shouldRewriteFullOuter(bnlj) && conditionOffloadable(
-          bnlj) && broadcastSideRelocatable(bnlj) =>
-      rewriteFullOuter(bnlj)
+  override def apply(plan: SparkPlan): SparkPlan = {
+    val threshold = VeloxConfig.get.broadcastNestedLoopJoinFullOuterRewriteThreshold
+    if (threshold < 0) {
+      plan
+    } else {
+      plan.transformUp {
+        case bnlj: BroadcastNestedLoopJoinExec
+            if bnlj.joinType == FullOuter && shouldRewriteFullOuter(
+              bnlj,
+              threshold) && conditionOffloadable(bnlj) && broadcastSideRelocatable(bnlj) =>
+          rewriteFullOuter(bnlj)
+      }
+    }
   }
 
   /**
@@ -86,8 +93,9 @@ case class VeloxBroadcastNestedLoopJoinRewriteRule() extends Rule[SparkPlan] {
       case _ => false
     }
 
-  private def shouldRewriteFullOuter(bnlj: BroadcastNestedLoopJoinExec): Boolean = {
-    val threshold = VeloxConfig.get.broadcastNestedLoopJoinFullOuterRewriteThreshold
+  private def shouldRewriteFullOuter(
+      bnlj: BroadcastNestedLoopJoinExec,
+      threshold: Long): Boolean = {
     bnlj.logicalLink.collect {
       case join: Join =>
         val leftSize = join.left.stats.sizeInBytes
@@ -170,45 +178,26 @@ case class VeloxBroadcastNestedLoopJoinRewriteRule() extends Rule[SparkPlan] {
       output: Seq[Attribute]): SparkPlan = {
     val unmatchedSideBase = unwrapBroadcast(unmatchedSide)
     val otherSideBase = unwrapBroadcast(otherSide)
-    val markerAttr =
-      AttributeReference("__gluten_bnlj_matched_build_side", BooleanType, nullable = false)()
-    val markedOtherSide = ProjectExec(
-      otherSideBase.output.map(attr => aliasTo(attr, attr)) :+
-        Alias(Literal.TrueLiteral, markerAttr.name)(exprId = markerAttr.exprId),
-      otherSideBase)
-    val unmatchedJoin = if (unmatchedSideIsLeft) {
-      BroadcastNestedLoopJoinExec(
-        unmatchedSideBase,
-        ensureBroadcast(markedOtherSide),
-        BuildRight,
-        LeftOuter,
-        condition)
-    } else {
-      BroadcastNestedLoopJoinExec(
-        ensureBroadcast(markedOtherSide),
-        unmatchedSideBase,
-        BuildLeft,
-        RightOuter,
-        condition)
-    }
-    val unmatchedOnly = FilterExec(IsNull(markerAttr), unmatchedJoin)
+    val existsAttr =
+      AttributeReference("__gluten_bnlj_exists", BooleanType, nullable = false)()
+    val unmatchedJoin = BroadcastNestedLoopJoinExec(
+      unmatchedSideBase,
+      ensureBroadcast(otherSideBase),
+      BuildRight,
+      ExistenceJoin(existsAttr),
+      condition)
+    val unmatchedOnly = FilterExec(Not(existsAttr), unmatchedJoin)
     val projected = if (unmatchedSideIsLeft) {
       output.zipWithIndex.map {
         case (targetAttr, idx) if idx < unmatchedSideBase.output.size =>
           aliasTo(unmatchedSideBase.output(idx), targetAttr)
         case (targetAttr, _) =>
-          Alias(Literal.create(null, targetAttr.dataType), targetAttr.name)(
-            exprId = targetAttr.exprId,
-            qualifier = targetAttr.qualifier,
-            explicitMetadata = Some(targetAttr.metadata))
+          nullAliasFor(targetAttr)
       }
     } else {
       output.zipWithIndex.map {
         case (targetAttr, idx) if idx < otherSide.output.size =>
-          Alias(Literal.create(null, targetAttr.dataType), targetAttr.name)(
-            exprId = targetAttr.exprId,
-            qualifier = targetAttr.qualifier,
-            explicitMetadata = Some(targetAttr.metadata))
+          nullAliasFor(targetAttr)
         case (targetAttr, idx) =>
           aliasTo(unmatchedSideBase.output(idx - otherSide.output.size), targetAttr)
       }
@@ -235,10 +224,13 @@ case class VeloxBroadcastNestedLoopJoinRewriteRule() extends Rule[SparkPlan] {
       child)
   }
 
-  private def aliasTo(childAttr: Attribute, targetAttr: Attribute): NamedExpression = {
+  private def aliasTo(childAttr: Expression, targetAttr: Attribute): Alias = {
     Alias(childAttr, targetAttr.name)(
       exprId = targetAttr.exprId,
       qualifier = targetAttr.qualifier,
       explicitMetadata = Some(targetAttr.metadata))
   }
+
+  private def nullAliasFor(targetAttr: Attribute): Alias =
+    aliasTo(Literal.create(null, targetAttr.dataType), targetAttr)
 }
