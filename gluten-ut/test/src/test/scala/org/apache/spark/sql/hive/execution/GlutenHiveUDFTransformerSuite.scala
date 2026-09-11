@@ -32,8 +32,7 @@ import java.io.File
 import java.nio.file.Files
 
 @SlowHiveTest
-abstract class GlutenHiveUDFTransformerSuiteBase
-  extends SparkFunSuite {
+class GlutenHiveUDFTransformerSuite extends SparkFunSuite {
 
   private var baseDir: File = _
   private var spark: SparkSession = _

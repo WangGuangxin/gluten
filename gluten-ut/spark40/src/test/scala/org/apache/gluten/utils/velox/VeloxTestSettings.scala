@@ -91,7 +91,6 @@ class VeloxTestSettings extends BackendTestSettings {
   enableSuite[GlutenSupportsCatalogOptionsSuite]
   enableSuite[GlutenTableCapabilityCheckSuite]
   enableSuite[GlutenWriteDistributionAndOrderingSuite]
-  enableSuite[GlutenHiveUDFTransformerSuite]
   // Generated suites for org.apache.spark.sql.catalyst.expressions.aggregate
   enableSuite[aggregate.GlutenAggregateExpressionSuite]
   enableSuite[aggregate.GlutenApproxCountDistinctForIntervalsSuite]
