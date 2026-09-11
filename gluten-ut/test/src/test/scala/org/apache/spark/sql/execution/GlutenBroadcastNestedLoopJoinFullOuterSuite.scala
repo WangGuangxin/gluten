@@ -130,28 +130,32 @@ class GlutenBroadcastNestedLoopJoinFullOuterSuite
     val df2 = spark.range(3).select($"id".as("k2"))
 
     Seq(true, false).foreach {
-      codegenEnabled =>
-        withSQLConf(
-          SQLConf.WHOLESTAGE_CODEGEN_ENABLED.key -> codegenEnabled.toString,
-          SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key -> Long.MaxValue.toString,
-          SQLConf.EXCHANGE_REUSE_ENABLED.key -> "true",
-          SQLConf.ANSI_ENABLED.key -> "false"
-        ) {
-          val fullOuterJoin = df1.hint("broadcast").join(df2, $"k1" < $"k2", "full_outer")
-          assertNoSparkFullOuterBNLJ(fullOuterJoin)
-          assertPlanCount[BroadcastNestedLoopJoinExecTransformer](
-            fullOuterJoin,
-            expectedCount = 2)
-          assertNativeExistenceJoin(fullOuterJoin)
-          checkAnswer(
-            fullOuterJoin,
-            Seq(
-              Row(0, 1),
-              Row(0, 2),
-              Row(1, 2),
-              Row(2, null),
-              Row(3, null),
-              Row(null, 0)))
+      aqeEnabled =>
+        Seq(true, false).foreach {
+          codegenEnabled =>
+            withSQLConf(
+              SQLConf.ADAPTIVE_EXECUTION_ENABLED.key -> aqeEnabled.toString,
+              SQLConf.WHOLESTAGE_CODEGEN_ENABLED.key -> codegenEnabled.toString,
+              SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key -> Long.MaxValue.toString,
+              SQLConf.EXCHANGE_REUSE_ENABLED.key -> "true",
+              SQLConf.ANSI_ENABLED.key -> "false"
+            ) {
+              val fullOuterJoin = df1.hint("broadcast").join(df2, $"k1" < $"k2", "full_outer")
+              assertNoSparkFullOuterBNLJ(fullOuterJoin)
+              assertPlanCount[BroadcastNestedLoopJoinExecTransformer](
+                fullOuterJoin,
+                expectedCount = 2)
+              assertNativeExistenceJoin(fullOuterJoin)
+              checkAnswer(
+                fullOuterJoin,
+                Seq(
+                  Row(0, 1),
+                  Row(0, 2),
+                  Row(1, 2),
+                  Row(2, null),
+                  Row(3, null),
+                  Row(null, 0)))
+            }
         }
     }
   }
