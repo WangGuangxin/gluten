@@ -27,24 +27,24 @@ import org.apache.spark.sql.hive.{HiveGenericUDTF, HiveUDFTransformer}
 import org.apache.spark.tags.SlowHiveTest
 
 import org.apache.commons.io.FileUtils
+import org.apache.hadoop.hive.ql.udf.generic.GenericUDTF
+import org.apache.hadoop.hive.serde2.objectinspector.{ObjectInspector, ObjectInspectorFactory, StructObjectInspector}
+import org.apache.hadoop.hive.serde2.objectinspector.primitive.PrimitiveObjectInspectorFactory
 
 import java.io.File
 import java.nio.file.Files
+import java.util.Collections
 
 @SlowHiveTest
 class GlutenHiveUDFTransformerSuite extends SparkFunSuite {
 
   private var baseDir: File = _
   private var spark: SparkSession = _
-  private var testUdtfJar: File = _
 
   override def beforeAll(): Unit = {
     super.beforeAll()
     if (baseDir == null) {
       baseDir = Files.createTempDirectory(getClass.getSimpleName).toFile
-    }
-    if (testUdtfJar == null) {
-      testUdtfJar = copyAndGetResourceFile("TestUDTF.jar", ".jar")
     }
     if (spark == null) {
       spark = SparkSession.builder().config(sparkConf).enableHiveSupport().getOrCreate()
@@ -57,10 +57,6 @@ class GlutenHiveUDFTransformerSuite extends SparkFunSuite {
       if (spark != null) {
         spark.stop()
         spark = null
-      }
-      if (testUdtfJar != null) {
-        testUdtfJar.delete()
-        testUdtfJar = null
       }
       if (baseDir != null) {
         FileUtils.deleteDirectory(baseDir)
@@ -86,10 +82,9 @@ class GlutenHiveUDFTransformerSuite extends SparkFunSuite {
   }
 
   test("HiveGenericUDTF is recognized and mapped by HiveUDFTransformer") {
-    spark.sql(s"ADD JAR ${testUdtfJar.getCanonicalPath}")
     spark.sql(
       "CREATE TEMPORARY FUNCTION udtf_count2 " +
-        "AS 'org.apache.spark.sql.hive.execution.GenericUDTFCount2'")
+        "AS 'org.apache.spark.sql.hive.execution.GlutenTestGenericUDTF'")
 
     try {
       val analyzed = spark.sql("SELECT udtf_count2(a) FROM (SELECT 1 AS a) t")
@@ -106,7 +101,7 @@ class GlutenHiveUDFTransformerSuite extends SparkFunSuite {
       assert(HiveUDFTransformer.isHiveUDF(udtf))
       assert(
         HiveUDFTransformer.getHiveUDFNameAndClassName(udtf) ===
-          ("udtf_count2", "org.apache.spark.sql.hive.execution.GenericUDTFCount2"))
+          ("udtf_count2", "org.apache.spark.sql.hive.execution.GlutenTestGenericUDTF"))
 
       val previousMapping = UDFMappings.hiveUDFMap.get("udtf_count2")
       UDFMappings.hiveUDFMap.put("udtf_count2", "test_hive_generic_udtf")
@@ -126,4 +121,16 @@ class GlutenHiveUDFTransformerSuite extends SparkFunSuite {
       spark.sql("DROP TEMPORARY FUNCTION IF EXISTS udtf_count2")
     }
   }
+}
+
+class GlutenTestGenericUDTF extends GenericUDTF {
+  override def initialize(arguments: Array[ObjectInspector]): StructObjectInspector = {
+    ObjectInspectorFactory.getStandardStructObjectInspector(
+      Collections.singletonList("value"),
+      Collections.singletonList(PrimitiveObjectInspectorFactory.javaIntObjectInspector))
+  }
+
+  override def process(arguments: Array[AnyRef]): Unit = {}
+
+  override def close(): Unit = {}
 }
