@@ -16,7 +16,19 @@ if ! command -v docker >/dev/null; then
   exit 1
 fi
 
-docker build --progress=plain -t "${TPCDS_IMAGE}" "${ROOT_DIR}"
+for attempt in 1 2 3 4 5; do
+  if docker build -t "${TPCDS_IMAGE}" "${ROOT_DIR}"; then
+    break
+  fi
+  if ((attempt == 5)); then
+    echo "Image build failed after ${attempt} attempts." >&2
+    exit 1
+  fi
+  delay=$((4 << (attempt - 1)))
+  echo "Image build attempt ${attempt} failed; retrying in ${delay}s." >&2
+  sleep "${delay}"
+done
+
 docker run --rm "${TPCDS_IMAGE}" bash -lc '
   set -e
   test "$(/opt/spark/bin/spark-submit --version 2>&1 | grep -c "version 3.5.5")" -gt 0
