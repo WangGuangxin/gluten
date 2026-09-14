@@ -220,15 +220,10 @@ class ColumnarArrowPythonRunner(
           return false
         }
         val nextBatch = inputIterator.next()
-        val cols = (0 until nextBatch.numCols).toList.map(
-          i =>
-            nextBatch
-              .asInstanceOf[ColumnarBatch]
-              .column(i)
-              .asInstanceOf[ArrowWritableColumnVector]
-              .getValueVector)
         val nextRecordBatch =
-          SparkVectorUtil.toArrowRecordBatch(nextBatch.numRows, cols)
+          SparkVectorUtil.toArrowRecordBatchForPython(
+            nextBatch,
+            ArrowBufferAllocators.contextInstance())
         try {
           nextInputLoader.load(nextRecordBatch)
           nextInputWriter.writeBatch()
@@ -260,15 +255,8 @@ class ColumnarArrowPythonRunner(
             val nextBatch = inputIterator.next()
             numRows += nextBatch.numRows
 
-            val cols = (0 until nextBatch.numCols).toList.map(
-              i =>
-                nextBatch
-                  .asInstanceOf[ColumnarBatch]
-                  .column(i)
-                  .asInstanceOf[ArrowWritableColumnVector]
-                  .getValueVector)
             val nextRecordBatch =
-              SparkVectorUtil.toArrowRecordBatch(nextBatch.numRows, cols)
+              SparkVectorUtil.toArrowRecordBatchForPython(nextBatch, allocator)
             loader.load(nextRecordBatch)
             writer.writeBatch()
             if (nextRecordBatch != null) {
