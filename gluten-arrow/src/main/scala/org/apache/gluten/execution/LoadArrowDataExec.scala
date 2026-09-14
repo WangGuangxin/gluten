@@ -25,7 +25,7 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /** Converts input data with batch type [[ArrowNativeBatchType]] to type [[ArrowJavaBatchType]]. */
-case class LoadArrowDataExec(override val child: SparkPlan)
+case class LoadArrowDataExec(override val child: SparkPlan, useStringView: Boolean = true)
   extends ColumnarToColumnarExec(child)
   with GlutenColumnarToColumnarTransition {
 
@@ -34,7 +34,7 @@ case class LoadArrowDataExec(override val child: SparkPlan)
   override protected val to: Convention.BatchType = ArrowJavaBatchType
 
   override protected def mapIterator(in: Iterator[ColumnarBatch]): Iterator[ColumnarBatch] = {
-    in.map(b => ColumnarBatches.load(ArrowBufferAllocators.contextInstance, b))
+    in.map(b => ColumnarBatches.load(ArrowBufferAllocators.contextInstance, b, useStringView))
   }
 
   override protected def withNewChildInternal(newChild: SparkPlan): SparkPlan =

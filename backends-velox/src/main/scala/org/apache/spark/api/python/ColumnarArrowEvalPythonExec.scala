@@ -18,7 +18,7 @@ package org.apache.spark.api.python
 
 import org.apache.gluten.backendsapi.arrow.ArrowBatchTypes.ArrowJavaBatchType
 import org.apache.gluten.columnarbatch.ColumnarBatches
-import org.apache.gluten.execution.{ValidatablePlan, ValidationResult}
+import org.apache.gluten.execution.{LoadArrowDataExec, ValidatablePlan, ValidationResult}
 import org.apache.gluten.extension.columnar.transition.{Convention, ConventionReq}
 import org.apache.gluten.iterator.Iterators
 import org.apache.gluten.memory.arrow.alloc.ArrowBufferAllocators
@@ -220,10 +220,7 @@ class ColumnarArrowPythonRunner(
           return false
         }
         val nextBatch = inputIterator.next()
-        val nextRecordBatch =
-          SparkVectorUtil.toArrowRecordBatchForPython(
-            nextBatch,
-            ArrowBufferAllocators.contextInstance())
+        val nextRecordBatch = SparkVectorUtil.toArrowRecordBatch(nextBatch)
         try {
           nextInputLoader.load(nextRecordBatch)
           nextInputWriter.writeBatch()
@@ -255,8 +252,7 @@ class ColumnarArrowPythonRunner(
             val nextBatch = inputIterator.next()
             numRows += nextBatch.numRows
 
-            val nextRecordBatch =
-              SparkVectorUtil.toArrowRecordBatchForPython(nextBatch, allocator)
+            val nextRecordBatch = SparkVectorUtil.toArrowRecordBatch(nextBatch)
             loader.load(nextRecordBatch)
             writer.writeBatch()
             if (nextRecordBatch != null) {
@@ -495,8 +491,13 @@ case class ColumnarArrowEvalPythonExec(
     } while (vector.refCnt() != to)
   }
 
-  override protected def withNewChildInternal(newChild: SparkPlan): ColumnarArrowEvalPythonExec =
-    copy(udfs, resultAttrs, newChild)
+  override protected def withNewChildInternal(newChild: SparkPlan): ColumnarArrowEvalPythonExec = {
+    val pythonCompatibleChild = newChild match {
+      case load: LoadArrowDataExec => load.copy(useStringView = false)
+      case other => other
+    }
+    copy(udfs, resultAttrs, pythonCompatibleChild)
+  }
 }
 
 object ColumnarArrowEvalPythonExec {

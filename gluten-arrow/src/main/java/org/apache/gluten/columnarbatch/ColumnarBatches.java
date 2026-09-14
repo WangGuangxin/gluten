@@ -195,6 +195,11 @@ public final class ColumnarBatches {
   }
 
   public static ColumnarBatch load(BufferAllocator allocator, ColumnarBatch input) {
+    return load(allocator, input, true);
+  }
+
+  public static ColumnarBatch load(
+      BufferAllocator allocator, ColumnarBatch input, boolean useStringView) {
     if (isZeroColumnBatch(input)) {
       return input;
     }
@@ -216,7 +221,7 @@ public final class ColumnarBatches {
           iv.handle(),
           cSchema.memoryAddress(),
           cArray.memoryAddress(),
-          ARROW_STRING_VIEW_SUPPORTED);
+          useStringView && ARROW_STRING_VIEW_SUPPORTED);
 
       Data.exportSchema(
           allocator, ArrowUtil.toArrowSchema(cSchema, allocator, provider), provider, arrowSchema);

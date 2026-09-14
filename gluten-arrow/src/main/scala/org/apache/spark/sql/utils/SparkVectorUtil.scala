@@ -27,7 +27,6 @@ import org.apache.arrow.vector._
 import org.apache.arrow.vector.ipc.message.{ArrowFieldNode, ArrowRecordBatch}
 
 import scala.collection.JavaConverters.{asScalaBufferConverter, seqAsJavaListConverter}
-import scala.collection.mutable.ArrayBuffer
 
 object SparkVectorUtil {
 
@@ -41,57 +40,6 @@ object SparkVectorUtil {
           .asInstanceOf[ArrowWritableColumnVector]
           .getValueVector)
     toArrowRecordBatch(numRowsInBatch, cols)
-  }
-
-  /**
-   * Spark Python serializers don't support Arrow Utf8View/BinaryView. Materialize view vectors as
-   * regular Utf8/Binary before passing a record batch to a Python runner.
-   */
-  def toArrowRecordBatchForPython(
-      batch: ColumnarBatch,
-      allocator: org.apache.arrow.memory.BufferAllocator): ArrowRecordBatch = {
-    ColumnarBatches.checkLoaded(batch)
-    val temporaryVectors = ArrayBuffer[ValueVector]()
-    try {
-      val cols = (0 until batch.numCols).toList.map(
-        i => {
-          val column = batch.column(i).asInstanceOf[ArrowWritableColumnVector]
-          val source = column.getValueVector
-          source.getClass.getName match {
-            case "org.apache.arrow.vector.ViewVarCharVector" =>
-              val target = new VarCharVector(source.getName, allocator)
-              target.allocateNew()
-              for (rowId <- 0 until batch.numRows) {
-                if (column.isNullAt(rowId)) {
-                  target.setNull(rowId)
-                } else {
-                  target.setSafe(rowId, column.getUTF8String(rowId).getBytes)
-                }
-              }
-              target.setValueCount(batch.numRows)
-              temporaryVectors += target
-              target
-            case "org.apache.arrow.vector.ViewVarBinaryVector" =>
-              val target = new VarBinaryVector(source.getName, allocator)
-              target.allocateNew()
-              for (rowId <- 0 until batch.numRows) {
-                if (column.isNullAt(rowId)) {
-                  target.setNull(rowId)
-                } else {
-                  target.setSafe(rowId, column.getBinary(rowId))
-                }
-              }
-              target.setValueCount(batch.numRows)
-              temporaryVectors += target
-              target
-            case _ =>
-              source
-          }
-        })
-      toArrowRecordBatch(batch.numRows, cols)
-    } finally {
-      temporaryVectors.foreach(_.close())
-    }
   }
 
   def toArrowRecordBatch(numRows: Int, cols: List[ValueVector]): ArrowRecordBatch = {

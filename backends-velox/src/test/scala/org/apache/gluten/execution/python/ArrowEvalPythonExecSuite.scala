@@ -16,7 +16,7 @@
  */
 package org.apache.gluten.execution.python
 
-import org.apache.gluten.execution.WholeStageTransformerSuite
+import org.apache.gluten.execution.{LoadArrowDataExec, WholeStageTransformerSuite}
 
 import org.apache.spark.SparkConf
 import org.apache.spark.api.python.ColumnarArrowEvalPythonExec
@@ -69,6 +69,13 @@ class ArrowEvalPythonExecSuite extends WholeStageTransformerSuite {
 
     val df2 = base.select("a").withColumn("p_a", pyarrowTestUDFString(base("a")))
     checkSparkPlan[ColumnarArrowEvalPythonExec](df2)
+    val pythonExec = df2.queryExecution.executedPlan
+      .collectFirst { case exec: ColumnarArrowEvalPythonExec => exec }
+      .getOrElse(fail("ColumnarArrowEvalPythonExec was not found"))
+    pythonExec.child match {
+      case load: LoadArrowDataExec => assert(!load.useStringView)
+      case other => fail(s"Expected LoadArrowDataExec but found ${other.getClass.getName}")
+    }
     checkAnswer(df2, expected)
   }
 

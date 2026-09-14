@@ -48,7 +48,7 @@ object ArrowBatchTypes {
   object ArrowNativeBatchType extends Convention.BatchType {
     override protected def registerTransitions(): Unit = {
       fromBatch(ArrowJavaBatchType, OffloadArrowDataExec.apply)
-      toBatch(ArrowJavaBatchType, LoadArrowDataExec.apply)
+      toBatch(ArrowJavaBatchType, child => LoadArrowDataExec(child))
     }
   }
 }
