@@ -25,6 +25,7 @@ import org.apache.spark.sql.{Dataset, GlutenQueryTest, Row}
 import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, FullOuter}
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, AdaptiveSparkPlanHelper}
 import org.apache.spark.sql.execution.joins.BroadcastNestedLoopJoinExec
+import org.apache.spark.sql.functions.rand
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.test.SharedSparkSession
 
@@ -196,6 +197,39 @@ class GlutenBroadcastNestedLoopJoinFullOuterSuite
         },
         s"Expected the original full outer BNLJ when the rewrite is disabled:\n${plan.treeString}"
       )
+    }
+  }
+
+  test("Full outer BNLJ rewrite should skip nondeterministic children") {
+    assumeVeloxBackend()
+    val stable = Seq(0.5).toDF("stable")
+    val nondeterministic = spark.range(1).select(rand().as("random"))
+
+    withSQLConf(
+      VeloxConfig.VELOX_BROADCAST_NESTED_LOOP_JOIN_FULL_OUTER_REWRITE_THRESHOLD.key ->
+        Long.MaxValue.toString,
+      SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key -> Long.MaxValue.toString,
+      SQLConf.EXCHANGE_REUSE_ENABLED.key -> "false"
+    ) {
+      val joins = Seq(
+        nondeterministic
+          .join(stable.hint("broadcast"), $"random" < $"stable", "full_outer"),
+        stable
+          .join(nondeterministic.hint("broadcast"), $"stable" < $"random", "full_outer")
+      )
+
+      joins.foreach {
+        join =>
+          val plan = materializePlan(join)
+          assert(
+            plan.exists {
+              case bnlj: BroadcastNestedLoopJoinExec if bnlj.joinType == FullOuter => true
+              case _ => false
+            },
+            s"Expected the original full outer BNLJ for a nondeterministic child:\n" +
+              plan.treeString
+          )
+      }
     }
   }
 

@@ -44,13 +44,23 @@ case class VeloxBroadcastNestedLoopJoinRewriteRule() extends Rule[SparkPlan] {
     } else {
       plan.transformUp {
         case bnlj: BroadcastNestedLoopJoinExec
-            if bnlj.joinType == FullOuter && shouldRewriteFullOuter(
-              bnlj,
-              threshold) && conditionOffloadable(bnlj) && broadcastSideRelocatable(bnlj) =>
+            if bnlj.joinType == FullOuter &&
+              childDeterministic(bnlj.left) &&
+              childDeterministic(bnlj.right) &&
+              shouldRewriteFullOuter(
+                bnlj,
+                threshold) && conditionOffloadable(bnlj) && broadcastSideRelocatable(bnlj) =>
           rewriteFullOuter(bnlj)
       }
     }
   }
+
+  // Query stages are leaf nodes, so inspect the encapsulated broadcast plan as well.
+  private def childDeterministic(plan: SparkPlan): Boolean =
+    plan.deterministic && (plan match {
+      case stage: BroadcastQueryStageExec => childDeterministic(stage.plan)
+      case _ => true
+    })
 
   /**
    * The rewrite reuses the original broadcast side in two roles at once: [[rewriteFullOuter]] keeps
@@ -103,13 +113,6 @@ case class VeloxBroadcastNestedLoopJoinRewriteRule() extends Rule[SparkPlan] {
         leftSize >= 0 && rightSize >= 0 && leftSize <= threshold && rightSize <= threshold
     }.getOrElse(false)
   }
-
-  private def extractChildLogicalSizes(
-      bnlj: BroadcastNestedLoopJoinExec): Option[(BigInt, BigInt)] =
-    for {
-      leftLogical <- bnlj.left.logicalLink
-      rightLogical <- bnlj.right.logicalLink
-    } yield (leftLogical.stats.sizeInBytes, rightLogical.stats.sizeInBytes)
 
   private def conditionOffloadable(bnlj: BroadcastNestedLoopJoinExec): Boolean =
     bnlj.condition.exists {
