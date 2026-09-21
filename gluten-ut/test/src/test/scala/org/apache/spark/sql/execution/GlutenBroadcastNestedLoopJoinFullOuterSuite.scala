@@ -16,7 +16,7 @@
  */
 package org.apache.spark.sql.execution
 
-import org.apache.gluten.config.{GlutenConfig, VeloxConfig}
+import org.apache.gluten.config.GlutenConfig
 import org.apache.gluten.execution.{BroadcastNestedLoopJoinExecTransformer, SortMergeJoinExecTransformer}
 import org.apache.gluten.utils.BackendTestUtils
 
@@ -42,6 +42,10 @@ class GlutenBroadcastNestedLoopJoinFullOuterSuite
   with SharedSparkSession
   with AdaptiveSparkPlanHelper {
   import testImplicits._
+
+  // This shared suite is also compiled when the Velox backend is not on the classpath.
+  private val fullOuterRewriteThresholdKey =
+    "spark.gluten.sql.columnar.backend.velox.broadcastNLJ.fullOuterRewriteThreshold"
 
   // Disable the forced shuffled hash join rewrite so explicit join hints retain their semantics.
   override protected def sparkConf: SparkConf = {
@@ -185,7 +189,7 @@ class GlutenBroadcastNestedLoopJoinFullOuterSuite
     val right = spark.range(3).select($"id".as("k2"))
 
     withSQLConf(
-      VeloxConfig.VELOX_BROADCAST_NESTED_LOOP_JOIN_FULL_OUTER_REWRITE_THRESHOLD.key -> "-1",
+      fullOuterRewriteThresholdKey -> "-1",
       SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key -> Long.MaxValue.toString
     ) {
       val fullOuterJoin = left.hint("broadcast").join(right, $"k1" < $"k2", "full_outer")
@@ -206,8 +210,7 @@ class GlutenBroadcastNestedLoopJoinFullOuterSuite
     val nondeterministic = spark.range(1).select(rand().as("random"))
 
     withSQLConf(
-      VeloxConfig.VELOX_BROADCAST_NESTED_LOOP_JOIN_FULL_OUTER_REWRITE_THRESHOLD.key ->
-        Long.MaxValue.toString,
+      fullOuterRewriteThresholdKey -> Long.MaxValue.toString,
       SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key -> Long.MaxValue.toString,
       SQLConf.EXCHANGE_REUSE_ENABLED.key -> "false"
     ) {
