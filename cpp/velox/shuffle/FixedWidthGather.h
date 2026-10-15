@@ -1,0 +1,70 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+#pragma once
+
+#include <cstdint>
+#include <type_traits>
+
+#if defined(__ARM_FEATURE_SVE)
+#include <arm_sve.h>
+#endif
+
+namespace gluten::detail {
+
+// Copy one partition's row selection to its contiguous value buffer. Source,
+// rowIds and destination must not overlap. Small selections and other widths
+// retain the scalar path. No vector load reads past the selection's end.
+template <typename T>
+inline void
+gatherFixedWidth(const T* __restrict__ src, const uint32_t* __restrict__ rowIds, uint32_t size, T* __restrict__ dst) {
+  uint32_t pos = 0;
+#if defined(__ARM_FEATURE_SVE)
+  if constexpr (std::is_same_v<T, uint32_t> || std::is_same_v<T, uint64_t> || std::is_same_v<T, int64_t>) {
+    // Avoid vector setup for the tiny partitions common with many reducers.
+    constexpr uint32_t kMinVectorizedRows = 8;
+    if (size < kMinVectorizedRows) {
+      for (; pos < size; ++pos) {
+        dst[pos] = src[rowIds[pos]];
+      }
+      return;
+    }
+    if constexpr (std::is_same_v<T, uint32_t>) {
+      const auto lanes = svcntw();
+      const auto all = svptrue_b32();
+      for (; size - pos >= lanes; pos += lanes) {
+        auto indices = svld1_u32(all, rowIds + pos);
+        svst1_u32(all, dst + pos, svld1_gather_u32index_u32(all, src, indices));
+      }
+    } else {
+      const auto lanes = svcntd();
+      const auto all = svptrue_b64();
+      for (; size - pos >= lanes; pos += lanes) {
+        // Zero-extend the 32-bit row IDs, loading only one per 64-bit lane.
+        auto indices = svld1uw_u64(all, rowIds + pos);
+        auto values = svld1_gather_u64index_u64(all, reinterpret_cast<const uint64_t*>(src), indices);
+        svst1_u64(all, reinterpret_cast<uint64_t*>(dst + pos), values);
+      }
+    }
+  }
+#endif
+  for (; pos < size; ++pos) {
+    dst[pos] = src[rowIds[pos]];
+  }
+}
+
+} // namespace gluten::detail

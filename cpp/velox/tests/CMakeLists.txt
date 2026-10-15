@@ -97,6 +97,13 @@ endif()
 
 set(VELOX_TEST_COMMON_SRCS JsonToProtoConverter.cc FilePathGenerator.cc)
 
+add_executable(fixed_width_gather_test FixedWidthGatherTest.cc)
+target_include_directories(fixed_width_gather_test
+                           PRIVATE ${CMAKE_SOURCE_DIR}/velox)
+target_link_libraries(fixed_width_gather_test PRIVATE GTest::gtest
+                                                      GTest::gtest_main)
+gtest_discover_tests(fixed_width_gather_test DISCOVERY_MODE PRE_TEST)
+
 add_velox_test(velox_shuffle_writer_test SOURCES VeloxShuffleWriterTest.cc)
 
 add_velox_test(velox_hash_shuffle_writer_input_encoding_test SOURCES
