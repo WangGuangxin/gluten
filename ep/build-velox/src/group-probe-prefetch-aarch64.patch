@@ -1,0 +1,117 @@
+diff --git a/velox/exec/HashTable.cpp b/velox/exec/HashTable.cpp
+index 5ba18992c..021b105f5 100644
+--- a/velox/exec/HashTable.cpp
++++ b/velox/exec/HashTable.cpp
+@@ -498,11 +498,19 @@ void HashTable<ignoreNullKeys>::groupProbeWithPrefetch(HashLookup& lookup) {
+   constexpr int32_t kKeyOffset =
+       isNormalizedKey ? -static_cast<int32_t>(sizeof(normalized_key_t)) : 0;
+-  ProbeState states[kPrefetchSize];
++  // Tune normalized-key group probing independently of join probing.
++  // Keep the general-hash window unchanged.
++#if defined(__aarch64__)
++  constexpr int32_t kGroupPrefetchSize = isNormalizedKey ? 128 : kPrefetchSize;
++#else
++  constexpr int32_t kGroupPrefetchSize = kPrefetchSize;
++#endif
++  ProbeState states[kGroupPrefetchSize];
+   const int32_t numProbes = lookup.rows.size();
+   const vector_size_t* rows = lookup.rows.data();
+   const uint64_t* hashes = lookup.hashes.data();
+   for (int32_t probeIndex = 0; probeIndex < numProbes;
+-       probeIndex += kPrefetchSize) {
+-    const int32_t numStates = std::min(kPrefetchSize, numProbes - probeIndex);
++       probeIndex += kGroupPrefetchSize) {
++    const int32_t numStates =
++        std::min(kGroupPrefetchSize, numProbes - probeIndex);
+     for (int32_t i = 0; i < numStates; ++i) {
+       const auto row = rows[probeIndex + i];
+@@ -510,5 +518,6 @@ void HashTable<ignoreNullKeys>::groupProbeWithPrefetch(HashLookup& lookup) {
+     }
+     for (int32_t i = 0; i < numStates; ++i) {
+-      states[i].firstProbe<ProbeState::Operation::kInsert>(*this, kKeyOffset);
++      states[i].template firstProbe<ProbeState::Operation::kInsert>(
++          *this, kKeyOffset);
+     }
+     // Tags loaded by firstProbe() go stale once an earlier state in this
+diff --git a/velox/exec/tests/HashTableTest.cpp b/velox/exec/tests/HashTableTest.cpp
+index bcf5b96ee..9c7954b37 100644
+--- a/velox/exec/tests/HashTableTest.cpp
++++ b/velox/exec/tests/HashTableTest.cpp
+@@ -844,37 +844,47 @@ TEST_P(HashTableTest, groupProbeDuplicateNewKeys) {
+   // must find the groups that earlier rows of the same window inserted.
+   constexpr int32_t kNumBatches = 100;
+-  constexpr int32_t kBatchSize = 1'000;
+   constexpr int32_t kNumNewKeysPerBatch = 20;
+-  for (const auto mode :
+-       {BaseHashTable::HashMode::kNormalizedKey,
+-        BaseHashTable::HashMode::kHash}) {
+-    SCOPED_TRACE(BaseHashTable::modeString(mode));
+-    auto table =
+-        createHashTableForAggregation(ROW({"a", "b"}, {BIGINT(), BIGINT()}), 2);
+-    if (mode == BaseHashTable::HashMode::kHash) {
+-      table->forceGenericHashMode(
+-          BaseHashTable::kNoSpillInputStartPartitionBit);
+-    }
+-    auto lookup = std::make_unique<HashLookup>(table->hashers(), pool());
+-    for (auto batch = 0; batch < kNumBatches; ++batch) {
+-      auto groupId = [&](auto row) {
+-        return batch * kNumNewKeysPerBatch + row % kNumNewKeysPerBatch;
+-      };
+-      // Both keys are unique per group, so the product of their distinct
+-      // counts outgrows kArray mode. Spacing out 'b' keeps it out of range
+-      // mode, while the combined range still fits a normalized key.
+-      auto data = makeRowVector({
+-          makeFlatVector<int64_t>(kBatchSize, groupId),
+-          makeFlatVector<int64_t>(
+-              kBatchSize, [&](auto row) { return groupId(row) * 1'000; }),
+-      });
+-      insertGroups(*data, *lookup, *table);
+-      ASSERT_EQ(lookup->newGroups.size(), kNumNewKeysPerBatch);
+-      for (auto row = 0; row < kBatchSize; ++row) {
+-        ASSERT_EQ(lookup->hits[row], lookup->hits[row % kNumNewKeysPerBatch]);
++  for (const int32_t kBatchSize :
++       {31, 32, 33, 63, 64, 65, 127, 128, 129, 1'000}) {
++    SCOPED_TRACE(kBatchSize);
++    for (const auto mode :
++         {BaseHashTable::HashMode::kNormalizedKey,
++          BaseHashTable::HashMode::kHash}) {
++      SCOPED_TRACE(BaseHashTable::modeString(mode));
++      auto table = createHashTableForAggregation(
++          ROW({"a", "b"}, {BIGINT(), BIGINT()}), 2);
++      if (mode == BaseHashTable::HashMode::kHash) {
++        table->forceGenericHashMode(
++            BaseHashTable::kNoSpillInputStartPartitionBit);
++      }
++      auto lookup = std::make_unique<HashLookup>(table->hashers(), pool());
++      for (auto batch = 0; batch < kNumBatches; ++batch) {
++        auto groupId = [&](auto row) {
++          return batch * kNumNewKeysPerBatch + row % kNumNewKeysPerBatch;
++        };
++        // Both keys are unique per group, so the product of their distinct
++        // counts outgrows kArray mode. Spacing out 'b' keeps it out of range
++        // mode, while the combined range still fits a normalized key.
++        auto data = makeRowVector({
++            makeFlatVector<int64_t>(kBatchSize, groupId),
++            makeFlatVector<int64_t>(
++                kBatchSize, [&](auto row) { return groupId(row) * 1'000; }),
++        });
++        insertGroups(*data, *lookup, *table);
++        ASSERT_EQ(lookup->newGroups.size(), kNumNewKeysPerBatch);
++        for (auto row = 0; row < kBatchSize; ++row) {
++          ASSERT_EQ(lookup->hits[row], lookup->hits[row % kNumNewKeysPerBatch]);
++        }
++        const std::vector<char*> existingHits(
++            lookup->hits.begin(), lookup->hits.end());
++        insertGroups(*data, *lookup, *table);
++        ASSERT_TRUE(lookup->newGroups.empty());
++        EXPECT_EQ(
++            std::vector<char*>(lookup->hits.begin(), lookup->hits.end()),
++            existingHits);
+       }
++      EXPECT_EQ(table->numDistinct(), kNumBatches * kNumNewKeysPerBatch);
++      EXPECT_EQ(table->hashMode(), mode);
+     }
+-    EXPECT_EQ(table->numDistinct(), kNumBatches * kNumNewKeysPerBatch);
+-    EXPECT_EQ(table->hashMode(), mode);
+   }
+ }

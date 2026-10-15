@@ -242,5 +242,10 @@ fi
 
 apply_provided_velox_patch
 
+# Keep the AArch64 group-probe tuning when preparing a fresh Velox checkout.
+if ! git -C "$VELOX_HOME" apply --reverse --check "$CURRENT_DIR/group-probe-prefetch-aarch64.patch" 2>/dev/null; then
+  git -C "$VELOX_HOME" apply "$CURRENT_DIR/group-probe-prefetch-aarch64.patch"
+fi
+
 
 echo "Finished getting Velox code"
