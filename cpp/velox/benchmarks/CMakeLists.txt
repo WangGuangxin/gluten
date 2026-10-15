@@ -37,6 +37,11 @@ add_velox_benchmark(plan_validator_util PlanValidatorUtil.cc)
 
 add_velox_benchmark(velox_batch_resizer_benchmark VeloxBatchResizerBenchmark.cc)
 
+add_executable(fixed_width_gather_benchmark FixedWidthGatherBenchmark.cc)
+target_include_directories(fixed_width_gather_benchmark
+                           PRIVATE ${CMAKE_SOURCE_DIR}/velox)
+target_link_libraries(fixed_width_gather_benchmark PRIVATE benchmark::benchmark)
+
 if(ENABLE_S3)
   add_velox_benchmark(s3_async_upload_benchmark S3AsyncUploadBenchmark.cc)
 endif()

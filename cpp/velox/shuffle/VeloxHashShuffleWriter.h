@@ -39,6 +39,7 @@
 
 #include "VeloxShuffleWriter.h"
 #include "memory/VeloxMemoryManager.h"
+#include "shuffle/FixedWidthGather.h"
 #include "shuffle/PartitionWriter.h"
 #include "shuffle/Partitioner.h"
 #include "shuffle/Utils.h"
@@ -348,10 +349,8 @@ class VeloxHashShuffleWriter : public VeloxShuffleWriter {
       auto dstPidBase = reinterpret_cast<T*>(dstAddrs[pid] + partitionBufferBase_[pid] * sizeof(T));
       auto pos = partition2RowOffsetBase_[pid];
       auto end = partition2RowOffsetBase_[pid + 1];
-      for (; pos < end; ++pos) {
-        auto rowId = rowOffset2RowId_[pos];
-        *dstPidBase++ = reinterpret_cast<const T*>(srcAddr)[rowId]; // copy
-      }
+      detail::gatherFixedWidth(
+          reinterpret_cast<const T*>(srcAddr), rowOffset2RowId_.data() + pos, end - pos, dstPidBase);
     }
     return arrow::Status::OK();
   }
