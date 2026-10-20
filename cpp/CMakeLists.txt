@@ -181,6 +181,16 @@ endif()
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${KNOWN_WARNINGS}")
 
 # Keep same compile option with Velox.
+option(VELOX_ENABLE_ARM_SVE_GATHER "Enable matching Velox header SVE gather paths." OFF)
+add_compile_definitions(VELOX_ENABLE_ARM_SVE_GATHER=$<BOOL:${VELOX_ENABLE_ARM_SVE_GATHER}>)
+
+set(GLUTEN_PGO_MODE "OFF" CACHE STRING "PGO phase: OFF, GENERATE or USE")
+set_property(CACHE GLUTEN_PGO_MODE PROPERTY STRINGS OFF GENERATE USE)
+if(NOT GLUTEN_PGO_MODE STREQUAL "OFF")
+  include("${VELOX_HOME}/CMake/VeloxPGO.cmake")
+  velox_configure_pgo(GLUTEN)
+endif()
+
 execute_process(
   COMMAND
     bash -c

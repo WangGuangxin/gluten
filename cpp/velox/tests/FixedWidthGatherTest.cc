@@ -99,6 +99,21 @@ TYPED_TEST(FixedWidthGatherTest, repeatedAndReverseSelections) {
   }
 }
 
+TYPED_TEST(FixedWidthGatherTest, runtimeDisableMatchesSvePath) {
+  using T = TypeParam;
+  std::array<T, 259> input;
+  std::array<uint32_t, 259> indices;
+  std::array<T, 259> vectorized;
+  std::array<T, 259> scalar;
+  for (uint32_t i = 0; i < input.size(); ++i) {
+    input[i] = static_cast<T>(i * 17);
+    indices[i] = (i * 37) % input.size();
+  }
+  detail::gatherFixedWidth(input.data(), indices.data(), indices.size(), vectorized.data(), true);
+  detail::gatherFixedWidth(input.data(), indices.data(), indices.size(), scalar.data(), false);
+  EXPECT_EQ(std::memcmp(vectorized.data(), scalar.data(), sizeof(vectorized)), 0);
+}
+
 #if defined(__unix__)
 // SVE memory accesses need a real guard page as well as sanitizer coverage.
 // In particular, an ordinary 32-bit vector load for 64-bit gather indices

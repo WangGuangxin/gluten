@@ -136,6 +136,32 @@ class VeloxConfig(conf: SQLConf) extends GlutenConfig(conf) {
 }
 
 object VeloxConfig extends ConfigRegistry {
+  val HASH_SHUFFLE_SVE_GATHER_ENABLED =
+    buildConf("spark.gluten.sql.columnar.backend.velox.hashShuffle.sveGather.enabled")
+      .doc("Use native SVE gather for fixed-width hash shuffle columns on SVE builds.")
+      .booleanConf
+      .createWithDefault(true)
+
+  val HASH_JOIN_NUM_PARALLEL_CHAINS =
+    buildConf("spark.gluten.sql.columnar.backend.velox.hashJoin.numParallelChains")
+      .doc("Number of interleaved duplicate-key join chains. The default preserves eight chains.")
+      .intConf
+      .checkValue(v => v >= 1 && v <= 32, "Must be between 1 and 32")
+      .createWithDefault(8)
+
+  val HASH_JOIN_AHEAD_WINDOW =
+    buildConf("spark.gluten.sql.columnar.backend.velox.hashJoin.aheadWindow")
+      .doc("Maximum buffered results per interleaved duplicate-key join chain.")
+      .intConf
+      .checkValue(v => v >= 1 && v <= 32, "Must be between 1 and 32")
+      .createWithDefault(8)
+
+  val HASH_JOIN_PREFETCH_ENABLED =
+    buildConf("spark.gluten.sql.columnar.backend.velox.hashJoin.prefetch.enabled")
+      .doc("Prefetch rows and next pointers during duplicate-key join enumeration.")
+      .booleanConf
+      .createWithDefault(true)
+
   override def get: VeloxConfig = {
     new VeloxConfig(SQLConf.get)
   }
