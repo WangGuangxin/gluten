@@ -537,6 +537,12 @@ std::unordered_map<std::string, std::string> WholeStageResultIterator::getQueryC
       std::to_string(veloxCfg_->get<int32_t>(kHashJoinAheadWindow, 8));
   configs[velox::core::QueryConfig::kHashJoinPrefetchEnabled] =
       veloxCfg_->get<bool>(kHashJoinPrefetchEnabled, true) ? "true" : "false";
+  configs[velox::core::QueryConfig::kHashJoinAdaptiveValueIdsEnabled] =
+      veloxCfg_->get<bool>(kHashJoinAdaptiveValueIdsEnabled, false) ? "true" : "false";
+  configs[velox::core::QueryConfig::kHashJoinAdaptiveValueIdsMinRows] =
+      std::to_string(veloxCfg_->get<uint32_t>(kHashJoinAdaptiveValueIdsMinRows, 32768));
+  configs[velox::core::QueryConfig::kHashJoinAdaptiveValueIdsMinDistinctPct] =
+      std::to_string(veloxCfg_->get<uint32_t>(kHashJoinAdaptiveValueIdsMinDistinctPct, 80));
   // Find batch size from Spark confs. If found, set the preferred and max batch size.
   configs[velox::core::QueryConfig::kPreferredOutputBatchRows] =
       std::to_string(veloxCfg_->get<uint32_t>(kSparkBatchSize, 4096));

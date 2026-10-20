@@ -86,6 +86,48 @@ by joins and aggregations and does not require an ARM-specific instruction set.
 Compare `false` and `true` in the same rebuilt JAR before drawing conclusions
 about query or full-suite performance.
 
+## Adaptive Value-ID analysis during hash build
+
+These query-level settings control append-only hash join builds:
+
+| Spark property suffix under `spark.gluten.sql.columnar.backend.velox.hashJoin.` | Default | Meaning |
+| --- | --- | --- |
+| `adaptiveValueIds.enabled` | `false` | Select encoding-aware build analysis and stop high-cardinality dictionaries early. |
+| `adaptiveValueIds.minRows` | `32768` | Minimum selected logical rows observed by a builder before considering abandonment. Must be positive. |
+| `adaptiveValueIds.minDistinctPct` | `80` | Minimum distinct/observed-row percentage for abandonment, from 1 to 100. |
+
+The analysis reuses adjacent equal keys and selected dictionary entries, so
+repeated values do not require repeated F14 insert/lookups. Nulls and repeated
+dictionary references still count as logical rows for the sampling denominator.
+Flat strings without local repetition retain the existing analysis loop and
+reuse its temporary ID storage; this avoids adding overhead to unordered,
+low-cardinality strings.
+Low-cardinality builds retain their exact dictionaries. High distinct ratios
+permit discarding the dictionary while retaining exact numeric bounds; dense
+integer batches then use a bounds reduction. Wide domains fall back to generic
+hashing when neither range nor distinct encoding remains viable. Deduplicating
+and counting builds, grouping, and probe-side equality retain their existing
+paths. Sub-millisecond timestamps cannot use millisecond Value-IDs.
+
+This is a prefix-based heuristic. A distinct-heavy prefix followed by repeated
+keys can abandon an otherwise useful dictionary, so compare both settings on
+the intended workload. Losing an exact dictionary can also change dynamic
+filter selectivity; the remaining filter must never reject a matching key.
+Rebuild both native libraries from matching source trees.
+
+Native HashBuild runtime statistics report `valueIdAnalysisRows`,
+`valueIdDictionaryLookups`, `valueIdLegacyAnalysisRows`, `valueIdObservedDistincts`,
+`valueIdDictionaryGrowthBatches`, `valueIdAbandonedDictionaries`,
+`valueIdRangeOnlyBatches`, and `valueIdFinalHashMode`. Distinct observations are
+per-column batch-boundary samples; use their maximum rather than their sum as
+an NDV observation. Growth counts describe capacity increases observed between
+batch boundaries, rather than an exact F14 rehash count. Hash modes use the
+native `BaseHashTable::HashMode` enum. These statistics remain local to each
+builder and do not synchronize F14 dictionaries across worker threads.
+`valueIdDictionaryLookups` counts calls on the new analysis paths; the retained
+legacy string loop reports its logical row count separately and does not claim
+an exact lookup count. Zero-activity counters may be absent.
+
 ## PGO and LTO
 
 Velox's `CMake/VeloxPGO.cmake` supplies an opt-in GCC/Clang profiling helper.

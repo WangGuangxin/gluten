@@ -136,6 +136,27 @@ class VeloxConfig(conf: SQLConf) extends GlutenConfig(conf) {
 }
 
 object VeloxConfig extends ConfigRegistry {
+  val HASH_JOIN_ADAPTIVE_VALUE_IDS_ENABLED =
+    buildConf("spark.gluten.sql.columnar.backend.velox.hashJoin.adaptiveValueIds.enabled")
+      .doc(
+        "Sample append-only join builds and abandon high-cardinality value-ID dictionaries early.")
+      .booleanConf
+      .createWithDefault(false)
+
+  val HASH_JOIN_ADAPTIVE_VALUE_IDS_MIN_ROWS =
+    buildConf("spark.gluten.sql.columnar.backend.velox.hashJoin.adaptiveValueIds.minRows")
+      .doc("Minimum selected build rows before considering value-ID dictionary abandonment.")
+      .intConf
+      .checkValue(_ > 0, "Must be positive")
+      .createWithDefault(32768)
+
+  val HASH_JOIN_ADAPTIVE_VALUE_IDS_MIN_DISTINCT_PCT =
+    buildConf("spark.gluten.sql.columnar.backend.velox.hashJoin.adaptiveValueIds.minDistinctPct")
+      .doc("Minimum distinct/build-row percentage for early dictionary abandonment.")
+      .intConf
+      .checkValue(v => v >= 1 && v <= 100, "Must be between 1 and 100")
+      .createWithDefault(80)
+
   val ROW_CONTAINER_BATCH_STRING_EXTRACTION_ENABLED =
     buildStaticConf(
       "spark.gluten.sql.columnar.backend.velox.rowContainer.batchStringExtraction.enabled")

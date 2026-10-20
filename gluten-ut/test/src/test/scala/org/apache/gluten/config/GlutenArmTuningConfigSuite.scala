@@ -46,7 +46,10 @@ class GlutenArmTuningConfigSuite extends GlutenQueryTest with SharedSparkSession
       (prefix + "hashShuffle.sveGather.enabled") -> "false",
       (prefix + "hashJoin.numParallelChains") -> "16",
       (prefix + "hashJoin.aheadWindow") -> "4",
-      (prefix + "hashJoin.prefetch.enabled") -> "false"
+      (prefix + "hashJoin.prefetch.enabled") -> "false",
+      (prefix + "hashJoin.adaptiveValueIds.enabled") -> "true",
+      (prefix + "hashJoin.adaptiveValueIds.minRows") -> "16384",
+      (prefix + "hashJoin.adaptiveValueIds.minDistinctPct") -> "90"
     )
     val native = GlutenConfig.getNativeSessionConf("velox", overrides)
     overrides.foreach { case (key, value) => assert(native(key) == value) }
