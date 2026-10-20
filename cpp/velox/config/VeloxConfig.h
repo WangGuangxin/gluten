@@ -124,6 +124,9 @@ const std::string kEnableUserExceptionStacktrace =
     "spark.gluten.sql.columnar.backend.velox.enableUserExceptionStacktrace";
 const bool kEnableUserExceptionStacktraceDefault = true;
 
+const std::string kRowContainerBatchStringExtractionEnabled =
+    "spark.gluten.sql.columnar.backend.velox.rowContainer.batchStringExtraction.enabled";
+
 const std::string kEnableSystemExceptionStacktrace =
     "spark.gluten.sql.columnar.backend.velox.enableSystemExceptionStacktrace";
 const bool kEnableSystemExceptionStacktraceDefault = true;

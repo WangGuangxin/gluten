@@ -64,6 +64,28 @@ For isolated experiments, compare chains 4/8/16/32 while keeping the ahead
 window fixed, then vary the window separately. Keep NUMA placement, resource
 allocation, batch size, SQL, and dataset unchanged.
 
+## Batched string materialization
+
+The application-static property
+`spark.gluten.sql.columnar.backend.velox.rowContainer.batchStringExtraction.enabled`
+defaults to `false`. Set it before Spark starts; changing it with `SET` in a
+running session is not supported. Gluten initializes the corresponding Velox
+flag once during native backend initialization. Rebuild both native libraries
+from the matching source trees before enabling it.
+
+When enabled, RowContainer string extraction reserves output string storage
+once per bounded block, instead of once per long string. A block contains at
+most 128 rows and stops gathering after reaching 64 KiB of payload; a single
+large string may exceed this byte target. Batches below 32 rows retain the
+original path. Inline strings, null rows, selected row numbers, VARCHAR and
+VARBINARY, output offsets, and fragmented source strings are supported.
+
+The output owns its copied bytes and remains valid after the source container
+is cleared or destroyed. This path does not borrow source memory. It is shared
+by joins and aggregations and does not require an ARM-specific instruction set.
+Compare `false` and `true` in the same rebuilt JAR before drawing conclusions
+about query or full-suite performance.
+
 ## PGO and LTO
 
 Velox's `CMake/VeloxPGO.cmake` supplies an opt-in GCC/Clang profiling helper.

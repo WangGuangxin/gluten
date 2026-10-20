@@ -136,6 +136,13 @@ class VeloxConfig(conf: SQLConf) extends GlutenConfig(conf) {
 }
 
 object VeloxConfig extends ConfigRegistry {
+  val ROW_CONTAINER_BATCH_STRING_EXTRACTION_ENABLED =
+    buildStaticConf(
+      "spark.gluten.sql.columnar.backend.velox.rowContainer.batchStringExtraction.enabled")
+      .doc("Batch RowContainer string output into output-owned buffers. Set before Spark starts.")
+      .booleanConf
+      .createWithDefault(false)
+
   val HASH_SHUFFLE_SVE_GATHER_ENABLED =
     buildConf("spark.gluten.sql.columnar.backend.velox.hashShuffle.sveGather.enabled")
       .doc("Use native SVE gather for fixed-width hash shuffle columns on SVE builds.")
