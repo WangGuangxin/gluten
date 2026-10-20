@@ -31,6 +31,10 @@ const std::string kHashJoinAdaptiveValueIdsMinRows =
     "spark.gluten.sql.columnar.backend.velox.hashJoin.adaptiveValueIds.minRows";
 const std::string kHashJoinAdaptiveValueIdsMinDistinctPct =
     "spark.gluten.sql.columnar.backend.velox.hashJoin.adaptiveValueIds.minDistinctPct";
+const std::string kHashJoinBatchValueIdsEnabled =
+    "spark.gluten.sql.columnar.backend.velox.hashJoin.batchValueIds.enabled";
+const std::string kGroupingSetsBatchingEnabled =
+    "spark.gluten.sql.columnar.backend.velox.aggregation.groupingSetsBatching.enabled";
 // memory
 const std::string kSpillStrategy = "spark.gluten.sql.columnar.backend.velox.spillStrategy";
 const std::string kSpillStrategyDefaultValue = "auto";

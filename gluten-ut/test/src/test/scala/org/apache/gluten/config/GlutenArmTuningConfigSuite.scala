@@ -22,6 +22,51 @@ import org.apache.spark.sql.GlutenQueryTest
 import org.apache.spark.sql.test.SharedSparkSession
 
 class GlutenArmTuningConfigSuite extends GlutenQueryTest with SharedSparkSession {
+  test("grouping-set batching preserves nulls decimal sums and duplicate sets") {
+    if (BackendsApiManager.getBackendName != "velox") {
+      cancel("Grouping-set batching is specific to the Velox backend")
+    }
+    val query = """
+                  |SELECT k, s, grouping_id(), sum(v), count(*)
+                  |FROM VALUES
+                  |  (1, 'long-string-key', CAST(1.23 AS DECIMAL(12,2))),
+                  |  (1, 'long-string-key', CAST(NULL AS DECIMAL(12,2))),
+                  |  (2, CAST(NULL AS STRING), CAST(2.34 AS DECIMAL(12,2))),
+                  |  (CAST(NULL AS INT), 'another-long-key', CAST(-0.45 AS DECIMAL(12,2)))
+                  |AS t(k, s, v)
+                  |GROUP BY GROUPING SETS ((k, s), (k), (k), ())
+                  |""".stripMargin
+    val expected = withSQLConf("spark.gluten.enabled" -> "false") {
+      sql(query).collect().toSeq
+    }
+    withSQLConf(
+      "spark.gluten.enabled" -> "true",
+      "spark.gluten.sql.columnar.backend.velox.aggregation.groupingSetsBatching.enabled" -> "true") {
+      checkAnswer(sql(query), expected)
+    }
+  }
+
+  test("hash-build value-ID reuse preserves semi-join multiplicity and nulls") {
+    if (BackendsApiManager.getBackendName != "velox") {
+      cancel("Hash-build value-ID reuse is specific to the Velox backend")
+    }
+    val query = """
+                  |SELECT /*+ SHUFFLE_HASH(r) */ l.k
+                  |FROM VALUES (1L), (1L), (2L), (3L), (CAST(NULL AS BIGINT)) AS l(k)
+                  |LEFT SEMI JOIN
+                  |  (SELECT id DIV 12 AS k FROM range(48)) r
+                  |ON l.k = r.k
+                  |""".stripMargin
+    val expected = withSQLConf("spark.gluten.enabled" -> "false") {
+      sql(query).collect().toSeq
+    }
+    withSQLConf(
+      "spark.gluten.enabled" -> "true",
+      "spark.gluten.sql.columnar.backend.velox.hashJoin.batchValueIds.enabled" -> "true") {
+      checkAnswer(sql(query), expected)
+    }
+  }
+
   test("batch string extraction reaches native backend initialization") {
     if (BackendsApiManager.getBackendName != "velox") {
       cancel("Batch string extraction is specific to the Velox backend")
@@ -49,7 +94,9 @@ class GlutenArmTuningConfigSuite extends GlutenQueryTest with SharedSparkSession
       (prefix + "hashJoin.prefetch.enabled") -> "false",
       (prefix + "hashJoin.adaptiveValueIds.enabled") -> "true",
       (prefix + "hashJoin.adaptiveValueIds.minRows") -> "16384",
-      (prefix + "hashJoin.adaptiveValueIds.minDistinctPct") -> "90"
+      (prefix + "hashJoin.adaptiveValueIds.minDistinctPct") -> "90",
+      (prefix + "hashJoin.batchValueIds.enabled") -> "true",
+      (prefix + "aggregation.groupingSetsBatching.enabled") -> "true"
     )
     val native = GlutenConfig.getNativeSessionConf("velox", overrides)
     overrides.foreach { case (key, value) => assert(native(key) == value) }

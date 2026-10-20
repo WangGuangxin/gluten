@@ -128,6 +128,57 @@ builder and do not synchronize F14 dictionaries across worker threads.
 legacy string loop reports its logical row count separately and does not claim
 an exact lookup count. Zero-activity counters may be absent.
 
+## Hash-build Value-ID reuse
+
+The query-level property
+`spark.gluten.sql.columnar.backend.velox.hashJoin.batchValueIds.enabled`
+defaults to `false`. It reuses repeated keys while producing actual Value-IDs
+for deduplicating/counting builds and while analyzing append-only builds.
+This is independent of `hashJoin.adaptiveValueIds.enabled` and does not abandon
+dictionaries. A join that permits deduplication may still execute append-only:
+`abandon_dedup_hashmap_min_pct=0`, the current default, disables dedup builds.
+
+Locally repeated flat keys reuse the previous ID. Repeated dictionary base
+indices use a batch-local ID cache even when the base vector is larger than
+the selected batch. Sparse selections, outer nulls, ID multipliers, dictionary
+growth and unmappable-ID retries retain their original semantics. Existing
+constant/range paths and batches without sampled repetition use their original
+loops. Native counters are `hashBuildValueIdRows`, `hashBuildValueIdReusedRows`,
+`hashBuildValueIdLegacyRows`, `hashBuildDedupInputRows` and
+`hashBuildAppendInputRows`. Key-work counts include retries; input-path counters
+separately distinguish actual dedup and append execution. They are not CPU-time
+savings. The earlier interleaving prototype and its measurements are preserved
+in the experiment artifacts and are not the current grouping-set path.
+
+## Grouping-set column hash reuse
+
+The query-level property
+`spark.gluten.sql.columnar.backend.velox.aggregation.groupingSetsBatching.enabled`
+defaults to `false`. It keeps Expand's original projection batches and row order.
+A downstream hash aggregation reuses raw column hashes while consuming different
+projections of the same Expand input batch. Identity-only grouping-key lineage
+through intermediate Project nodes is supported. Computed grouping keys,
+pre-grouped aggregation and other intervening operators retain the original path.
+
+The cache is query-local and bounded by the input column sizes. Hash/value-valid
+buffers are charged to the aggregation memory pool. Each incoming Expand batch
+advances an epoch; a new epoch or source-vector identity invalidates cached
+hashes, even if upstream reuses and mutates a vector object. Cached source owners
+are retained, and per-row validity handles different selections. Null constant
+projections do not evict the preceding source-column cache. Cache activation is
+limited to the current input group-probe call and ends before other work,
+including spill restoration, uses the hashers. Value-ID mappings and hash-mode
+transitions do not share this raw-hash cache.
+
+Native counters include `aggregationKeyHashRows`,
+`aggregationKeyHashComputations` and `aggregationKeyHashReusedRows`. Partial-full
+reasons are `partialFullLowReduction` and `partialFullMemory`; low reduction has
+the same short-circuit priority as before. These counters describe key-column
+work rather than an exclusive CPU-time breakdown. The feature does not change
+partial-aggregation memory limits, reduction thresholds, grouping-set
+multiplicity, grouping IDs, or aggregate functions. Rebuild both native libraries
+because internal operator and hasher layouts change.
+
 ## PGO and LTO
 
 Velox's `CMake/VeloxPGO.cmake` supplies an opt-in GCC/Clang profiling helper.

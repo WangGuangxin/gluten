@@ -531,6 +531,10 @@ void WholeStageResultIterator::collectMetrics() {
 
 std::unordered_map<std::string, std::string> WholeStageResultIterator::getQueryContextConf() {
   std::unordered_map<std::string, std::string> configs = {};
+  configs[velox::core::QueryConfig::kHashJoinBatchValueIdsEnabled] =
+      veloxCfg_->get<bool>(kHashJoinBatchValueIdsEnabled, false) ? "true" : "false";
+  configs[velox::core::QueryConfig::kGroupingSetsBatchingEnabled] =
+      veloxCfg_->get<bool>(kGroupingSetsBatchingEnabled, false) ? "true" : "false";
   configs[velox::core::QueryConfig::kHashJoinNumParallelChains] =
       std::to_string(veloxCfg_->get<int32_t>(kHashJoinNumParallelChains, 8));
   configs[velox::core::QueryConfig::kHashJoinAheadWindow] =

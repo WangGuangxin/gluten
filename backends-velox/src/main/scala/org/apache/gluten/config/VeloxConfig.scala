@@ -136,6 +136,18 @@ class VeloxConfig(conf: SQLConf) extends GlutenConfig(conf) {
 }
 
 object VeloxConfig extends ConfigRegistry {
+  val HASH_JOIN_BATCH_VALUE_IDS_ENABLED =
+    buildConf("spark.gluten.sql.columnar.backend.velox.hashJoin.batchValueIds.enabled")
+      .doc("Reuse repeated key value IDs during hash join build, including deduplicating builds.")
+      .booleanConf
+      .createWithDefault(false)
+
+  val GROUPING_SETS_BATCHING_ENABLED =
+    buildConf("spark.gluten.sql.columnar.backend.velox.aggregation.groupingSetsBatching.enabled")
+      .doc("Reuse column hashes across grouping-set projections of the same Expand input batch.")
+      .booleanConf
+      .createWithDefault(false)
+
   val HASH_JOIN_ADAPTIVE_VALUE_IDS_ENABLED =
     buildConf("spark.gluten.sql.columnar.backend.velox.hashJoin.adaptiveValueIds.enabled")
       .doc(
