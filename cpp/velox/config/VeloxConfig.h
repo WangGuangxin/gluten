@@ -20,6 +20,11 @@
 #include "config/GlutenConfig.h"
 
 namespace gluten {
+const std::string kHashShuffleSveGatherEnabled =
+    "spark.gluten.sql.columnar.backend.velox.hashShuffle.sveGather.enabled";
+const std::string kHashJoinNumParallelChains = "spark.gluten.sql.columnar.backend.velox.hashJoin.numParallelChains";
+const std::string kHashJoinAheadWindow = "spark.gluten.sql.columnar.backend.velox.hashJoin.aheadWindow";
+const std::string kHashJoinPrefetchEnabled = "spark.gluten.sql.columnar.backend.velox.hashJoin.prefetch.enabled";
 // memory
 const std::string kSpillStrategy = "spark.gluten.sql.columnar.backend.velox.spillStrategy";
 const std::string kSpillStrategyDefaultValue = "auto";

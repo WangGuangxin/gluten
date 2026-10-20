@@ -531,6 +531,12 @@ void WholeStageResultIterator::collectMetrics() {
 
 std::unordered_map<std::string, std::string> WholeStageResultIterator::getQueryContextConf() {
   std::unordered_map<std::string, std::string> configs = {};
+  configs[velox::core::QueryConfig::kHashJoinNumParallelChains] =
+      std::to_string(veloxCfg_->get<int32_t>(kHashJoinNumParallelChains, 8));
+  configs[velox::core::QueryConfig::kHashJoinAheadWindow] =
+      std::to_string(veloxCfg_->get<int32_t>(kHashJoinAheadWindow, 8));
+  configs[velox::core::QueryConfig::kHashJoinPrefetchEnabled] =
+      veloxCfg_->get<bool>(kHashJoinPrefetchEnabled, true) ? "true" : "false";
   // Find batch size from Spark confs. If found, set the preferred and max batch size.
   configs[velox::core::QueryConfig::kPreferredOutputBatchRows] =
       std::to_string(veloxCfg_->get<uint32_t>(kSparkBatchSize, 4096));

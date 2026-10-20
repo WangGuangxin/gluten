@@ -90,6 +90,7 @@ struct ShuffleWriterOptions {
 };
 
 struct HashShuffleWriterOptions : ShuffleWriterOptions {
+  bool enableSveGather = true;
   int32_t splitBufferSize = kDefaultShuffleWriterBufferSize;
   double splitBufferReallocThreshold = kDefaultSplitBufferReallocThreshold;
   int32_t partitionBufferEvictThreshold = kDefaultPartitionBufferEvictThreshold;

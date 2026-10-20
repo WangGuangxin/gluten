@@ -563,6 +563,9 @@ std::shared_ptr<ShuffleWriter> VeloxRuntime::createShuffleWriter(
     int32_t numPartitions,
     const std::shared_ptr<PartitionWriter>& partitionWriter,
     const std::shared_ptr<ShuffleWriterOptions>& options) {
+  if (auto hashOptions = std::dynamic_pointer_cast<HashShuffleWriterOptions>(options)) {
+    hashOptions->enableSveGather = veloxCfg_->get<bool>(kHashShuffleSveGatherEnabled, true);
+  }
   GLUTEN_ASSIGN_OR_THROW(
       std::shared_ptr<ShuffleWriter> shuffleWriter,
       VeloxShuffleWriter::create(options->shuffleWriterType, numPartitions, partitionWriter, options, memoryManager()));

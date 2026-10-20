@@ -288,7 +288,8 @@ class VeloxHashShuffleWriter : public VeloxShuffleWriter {
         splitBufferSize_(options->splitBufferSize),
         splitBufferReallocThreshold_(options->splitBufferReallocThreshold),
         partitionBufferEvictThreshold_(options->partitionBufferEvictThreshold),
-        rowBasedChecksumEnabled_(options->rowBasedChecksumEnabled) {
+        rowBasedChecksumEnabled_(options->rowBasedChecksumEnabled),
+        enableSveGather_(options->enableSveGather) {
     arenas_.resize(numPartitions);
   }
 
@@ -350,7 +351,7 @@ class VeloxHashShuffleWriter : public VeloxShuffleWriter {
       auto pos = partition2RowOffsetBase_[pid];
       auto end = partition2RowOffsetBase_[pid + 1];
       detail::gatherFixedWidth(
-          reinterpret_cast<const T*>(srcAddr), rowOffset2RowId_.data() + pos, end - pos, dstPidBase);
+          reinterpret_cast<const T*>(srcAddr), rowOffset2RowId_.data() + pos, end - pos, dstPidBase, enableSveGather_);
     }
     return arrow::Status::OK();
   }
@@ -526,6 +527,7 @@ class VeloxHashShuffleWriter : public VeloxShuffleWriter {
 
   // Row-based checksum state (per-partition XOR + SUM aggregation).
   bool rowBasedChecksumEnabled_{false};
+  bool enableSveGather_{true};
   std::vector<int64_t> checksumXor_;
   std::vector<int64_t> checksumSum_;
   std::vector<char> checksumBuffer_;

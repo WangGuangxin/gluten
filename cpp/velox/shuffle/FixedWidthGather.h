@@ -30,14 +30,18 @@ namespace gluten::detail {
 // rowIds and destination must not overlap. Small selections and other widths
 // retain the scalar path. No vector load reads past the selection's end.
 template <typename T>
-inline void
-gatherFixedWidth(const T* __restrict__ src, const uint32_t* __restrict__ rowIds, uint32_t size, T* __restrict__ dst) {
+inline void gatherFixedWidth(
+    const T* __restrict__ src,
+    const uint32_t* __restrict__ rowIds,
+    uint32_t size,
+    T* __restrict__ dst,
+    bool enableSveGather = true) {
   uint32_t pos = 0;
 #if defined(__ARM_FEATURE_SVE)
   if constexpr (std::is_same_v<T, uint32_t> || std::is_same_v<T, uint64_t> || std::is_same_v<T, int64_t>) {
     // Avoid vector setup for the tiny partitions common with many reducers.
     constexpr uint32_t kMinVectorizedRows = 8;
-    if (size < kMinVectorizedRows) {
+    if (!enableSveGather || size < kMinVectorizedRows) {
       for (; pos < size; ++pos) {
         dst[pos] = src[rowIds[pos]];
       }
