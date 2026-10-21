@@ -194,6 +194,12 @@ object VeloxConfig extends ConfigRegistry {
       .booleanConf
       .createWithDefault(false)
 
+  val HASH_JOIN_HEAD_CHAIN_DRAIN_ENABLED =
+    buildStaticConf("spark.gluten.sql.columnar.backend.velox.hashJoin.headChainDrain.enabled")
+      .doc("Drain long duplicate chains after later chains are buffered. Set before Spark starts.")
+      .booleanConf
+      .createWithDefault(false)
+
   val HASH_JOIN_FIXED_WIDTH_OUTPUT_ENABLED =
     buildStaticConf("spark.gluten.sql.columnar.backend.velox.hashJoin.fixedWidthOutput.enabled")
       .doc("Skip per-hit byte accounting for row-limited fixed-width join output. Set before Spark starts.")

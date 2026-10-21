@@ -123,6 +123,18 @@ class GlutenArmTuningConfigSuite extends GlutenQueryTest with SharedSparkSession
     }
   }
 
+  test("head-chain drain reaches application-static native initialization") {
+    if (BackendsApiManager.getBackendName != "velox") {
+      cancel("Head-chain drain is specific to Velox")
+    }
+    val key = "spark.gluten.sql.columnar.backend.velox.hashJoin.headChainDrain.enabled"
+    Seq("false", "true").foreach {
+      enabled =>
+        assert(GlutenConfig.getNativeBackendConf("velox", Map(key -> enabled)).get(key) == enabled)
+        assert(!GlutenConfig.getNativeSessionConf("velox", Map(key -> enabled)).contains(key))
+    }
+  }
+
   test("fixed-width join output reaches application-static native initialization") {
     if (BackendsApiManager.getBackendName != "velox") {
       cancel("Fixed-width join output is specific to the Velox backend")
