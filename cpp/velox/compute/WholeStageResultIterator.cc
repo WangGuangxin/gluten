@@ -20,6 +20,7 @@
 #include <folly/json.h>
 #include <folly/system/ThreadName.h>
 #include <optional>
+#include "AdaptivePartialAggregationConfig.h"
 #include "VeloxBackend.h"
 #include "VeloxPlanConverter.h"
 #include "VeloxRuntime.h"
@@ -588,6 +589,15 @@ std::unordered_map<std::string, std::string> WholeStageResultIterator::getQueryC
               ? veloxCfg_->get<int64_t>(kMaxExtendedPartialAggregationMemory).value()
               : static_cast<int64_t>(
                     veloxCfg_->get<double>(kMaxExtendedPartialAggregationMemoryRatio, 0.15) * offHeapMemory));
+      configs[velox::core::QueryConfig::kAdaptivePartialAggregationMemoryLimit] =
+          std::to_string(detail::computeAdaptivePartialAggregationLimit(
+              veloxCfg_->get<bool>(
+                  "spark.gluten.sql.columnar.backend.velox.aggregation.adaptivePartialMemory.enabled", false),
+              offHeapMemory,
+              veloxCfg_->get<int64_t>(kMaxPartialAggregationMemory),
+              veloxCfg_->get<int64_t>(kMaxExtendedPartialAggregationMemory),
+              veloxCfg_->get<int64_t>(
+                  "spark.gluten.sql.columnar.backend.velox.aggregation.adaptivePartialMemory.maxBytes", 1LL << 30)));
       configs[velox::core::QueryConfig::kMaxPartialAggregationMemory] = std::to_string(maxPartialAggregationMemory);
       configs[velox::core::QueryConfig::kMaxExtendedPartialAggregationMemory] =
           std::to_string(maxExtendedPartialAggregationMemory);

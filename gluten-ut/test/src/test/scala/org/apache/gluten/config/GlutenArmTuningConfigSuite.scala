@@ -218,4 +218,16 @@ class GlutenArmTuningConfigSuite extends GlutenQueryTest with SharedSparkSession
     }
   }
 
+  test("adaptive aggregation and string prefetch preserve native configuration scope") {
+    if (BackendsApiManager.getBackendName != "velox") {
+      cancel("These options are specific to Velox")
+    }
+    val prefix = "spark.gluten.sql.columnar.backend.velox."
+    val dynamic = Map(
+      (prefix + "aggregation.adaptivePartialMemory.enabled") -> "true",
+      (prefix + "aggregation.adaptivePartialMemory.maxBytes") -> "67108864")
+    val native = GlutenConfig.getNativeSessionConf("velox", dynamic)
+    dynamic.foreach { case (key, value) => assert(native.get(key).contains(value)) }
+  }
+
 }

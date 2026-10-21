@@ -648,6 +648,19 @@ object VeloxConfig extends ConfigRegistry {
       .booleanConf
       .createWithDefault(true)
 
+  val ADAPTIVE_PARTIAL_AGGREGATION_MEMORY_ENABLED =
+    buildConf("spark.gluten.sql.columnar.backend.velox.aggregation.adaptivePartialMemory.enabled")
+      .doc("Before a well-reducing partial aggregation flush, try reserving a larger buffer within the task budget. Explicit partial-memory caps take precedence.")
+      .booleanConf
+      .createWithDefault(false)
+
+  val ADAPTIVE_PARTIAL_AGGREGATION_MEMORY_MAX_BYTES =
+    buildConf("spark.gluten.sql.columnar.backend.velox.aggregation.adaptivePartialMemory.maxBytes")
+      .doc("Maximum adaptive partial buffer in bytes, additionally capped at half the task offheap budget.")
+      .longConf
+      .checkValue(v => v >= 0 && v <= 1073741824L, "Must be between 0 and 1 GiB")
+      .createWithDefault(1073741824L)
+
   val MAX_PARTIAL_AGGREGATION_MEMORY =
     buildConf("spark.gluten.sql.columnar.backend.velox.maxPartialAggregationMemory")
       .doc(
