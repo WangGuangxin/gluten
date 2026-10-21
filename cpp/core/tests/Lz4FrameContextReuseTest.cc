@@ -28,9 +28,11 @@ namespace {
 class Lz4ReuseGuard {
  public:
   Lz4ReuseGuard() {
+    setLz4FrameFastCompressionLevel(0);
     setLz4FrameContextReuseEnabled(true);
   }
   ~Lz4ReuseGuard() {
+    setLz4FrameFastCompressionLevel(0);
     setLz4FrameContextReuseEnabled(false);
   }
 };
@@ -136,5 +138,88 @@ TEST(Lz4FrameContextReuse, DisabledAndOtherCodecsRemainUnchanged) {
   EXPECT_EQ(
       zstd->compression_level(),
       arrow::util::Codec::Create(arrow::Compression::ZSTD).ValueOrDie()->compression_level());
+}
+TEST(Lz4FrameContextReuse, FastLevelsPreserveIndependentFramesAndStreaming) {
+  Lz4ReuseGuard guard;
+  auto original = arrow::util::Codec::Create(arrow::Compression::LZ4_FRAME).ValueOrDie();
+  std::mt19937 random(11871);
+  for (bool reuse : {false, true}) {
+    setLz4FrameContextReuseEnabled(reuse);
+    for (int level : {0, 1, 4, 8, 16, 32}) {
+      setLz4FrameFastCompressionLevel(level);
+      auto codec = createCompressionCodec(arrow::Compression::LZ4_FRAME, CodecBackend::NONE);
+      EXPECT_EQ(codec->compression_level(), level == 0 ? original->compression_level() : -level);
+      for (int size : {0, 1, 63, 64, 65, 1024, 65535, 65536, 65537, 262145}) {
+        std::vector<uint8_t> input(size), decoded(size);
+        for (auto& byte : input) {
+          byte = random() % (size % 2 ? 256 : 8);
+        }
+        std::vector<uint8_t> frame(codec->MaxCompressedLen(size, input.data()));
+        auto compressed = codec->Compress(size, input.data(), frame.size(), frame.data());
+        ASSERT_TRUE(compressed.ok()) << compressed.status();
+        auto result = original->Decompress(compressed.ValueOrDie(), frame.data(), size, decoded.data());
+        ASSERT_TRUE(result.ok()) << result.status();
+        EXPECT_EQ(result.ValueOrDie(), size);
+        EXPECT_EQ(decoded, input);
+        // Streaming uses the same delegate level. Test it independently rather
+        // than accidentally reporting a fast level with default streaming.
+        auto stream = codec->MakeCompressor().ValueOrDie();
+        std::vector<uint8_t> streaming(frame.size() + 65536);
+        auto data = stream->Compress(size, input.data(), streaming.size(), streaming.data()).ValueOrDie();
+        ASSERT_EQ(data.bytes_read, size);
+        auto end =
+            stream->End(streaming.size() - data.bytes_written, streaming.data() + data.bytes_written).ValueOrDie();
+        ASSERT_FALSE(end.should_retry);
+        auto decodedStream =
+            original->Decompress(data.bytes_written + end.bytes_written, streaming.data(), size, decoded.data());
+        ASSERT_TRUE(decodedStream.ok()) << decodedStream.status();
+        EXPECT_EQ(decodedStream.ValueOrDie(), size);
+        EXPECT_EQ(decoded, input);
+      }
+    }
+  }
+  setLz4FrameFastCompressionLevel(8);
+  EXPECT_ANY_THROW(setLz4FrameFastCompressionLevel(-1));
+  EXPECT_ANY_THROW(setLz4FrameFastCompressionLevel(33));
+  EXPECT_EQ(createCompressionCodec(arrow::Compression::LZ4_FRAME, CodecBackend::NONE)->compression_level(), -8);
+  auto zstd = createCompressionCodec(arrow::Compression::ZSTD, CodecBackend::NONE);
+  EXPECT_EQ(
+      zstd->compression_level(),
+      arrow::util::Codec::Create(arrow::Compression::ZSTD).ValueOrDie()->compression_level());
+}
+
+TEST(Lz4FrameContextReuse, FastSharedCodecUsesIndependentPerThreadFrames) {
+  Lz4ReuseGuard guard;
+  setLz4FrameFastCompressionLevel(8);
+  auto codec = createCompressionCodec(arrow::Compression::LZ4_FRAME, CodecBackend::NONE);
+  std::atomic<int> failures{0};
+  std::vector<std::thread> threads;
+  for (int id = 0; id < 8; ++id) {
+    threads.emplace_back([&, id] {
+      auto decoder = arrow::util::Codec::Create(arrow::Compression::LZ4_FRAME).ValueOrDie();
+      std::mt19937 random(id + 17);
+      for (int round = 0; round < 32; ++round) {
+        int size = 1 + random() % 150000;
+        std::vector<uint8_t> input(size), decoded(size);
+        for (auto& byte : input) {
+          byte = random() % (round % 2 ? 256 : 8);
+        }
+        std::vector<uint8_t> frame(codec->MaxCompressedLen(size, input.data()));
+        auto compressed = codec->Compress(size, input.data(), frame.size(), frame.data());
+        if (!compressed.ok()) {
+          ++failures;
+          continue;
+        }
+        auto result = decoder->Decompress(compressed.ValueOrDie(), frame.data(), size, decoded.data());
+        if (!result.ok() || result.ValueOrDie() != size || decoded != input) {
+          ++failures;
+        }
+      }
+    });
+  }
+  for (auto& thread : threads) {
+    thread.join();
+  }
+  EXPECT_EQ(failures, 0);
 }
 } // namespace gluten

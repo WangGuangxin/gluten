@@ -236,4 +236,16 @@ class GlutenArmTuningConfigSuite extends GlutenQueryTest with SharedSparkSession
     }
   }
 
+  test("LZ4 fast compression level reaches application-static backend initialization") {
+    if (BackendsApiManager.getBackendName != "velox") {
+      cancel("Native LZ4F tuning is specific to Velox")
+    }
+    val key = "spark.gluten.sql.columnar.backend.velox.shuffle.lz4Frame.fastCompressionLevel"
+    Seq("0", "4", "8", "32").foreach {
+      value =>
+        assert(GlutenConfig.getNativeBackendConf("velox", Map(key -> value)).get(key) == value)
+        assert(!GlutenConfig.getNativeSessionConf("velox", Map(key -> value)).contains(key))
+    }
+  }
+
 }

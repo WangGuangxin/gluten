@@ -29,6 +29,7 @@
 namespace gluten {
 namespace {
 std::atomic<bool> lz4FrameContextReuseEnabled{false};
+std::atomic<int32_t> lz4FrameFastCompressionLevel{0};
 #if LZ4_VERSION_NUMBER >= 11000
 // A complete, independent LZ4 frame is emitted on each call. Only the scratch
 // compression context is retained, per thread, with no cross-frame dictionary.
@@ -133,12 +134,24 @@ void setLz4FrameContextReuseEnabled(bool enabled) {
   lz4FrameContextReuseEnabled.store(enabled, std::memory_order_relaxed);
 }
 
+void setLz4FrameFastCompressionLevel(int32_t level) {
+  GLUTEN_CHECK(level >= 0 && level <= 32, "LZ4 fast compression level must be in[0,32]");
+  lz4FrameFastCompressionLevel.store(level, std::memory_order_relaxed);
+}
+
 std::unique_ptr<arrow::util::Codec>
 createCompressionCodec(arrow::Compression::type compressedType, CodecBackend codecBackend, int32_t compressionLevel) {
   std::unique_ptr<arrow::util::Codec> codec;
   switch (compressedType) {
     case arrow::Compression::LZ4_FRAME: {
-      GLUTEN_ASSIGN_OR_THROW(codec, arrow::util::Codec::Create(compressedType));
+      const auto fastLevel = lz4FrameFastCompressionLevel.load(std::memory_order_relaxed);
+      // Construct the delegate at the actual level so one-shot and streaming
+      // compressors, bounds and level metadata remain consistent. Frames stay
+      // standard independent LZ4F and decode with an unmodified Arrow codec.
+      GLUTEN_ASSIGN_OR_THROW(
+          codec,
+          arrow::util::Codec::Create(
+              compressedType, fastLevel == 0 ? arrow::util::kUseDefaultCompressionLevel : -fastLevel));
 #if LZ4_VERSION_NUMBER >= 11000
       if (lz4FrameContextReuseEnabled.load(std::memory_order_relaxed)) {
         codec = std::make_unique<ReusableLz4FrameCodec>(std::move(codec));

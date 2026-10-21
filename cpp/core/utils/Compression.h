@@ -25,6 +25,9 @@ enum CodecBackend { NONE, QAT };
 
 void setLz4FrameContextReuseEnabled(bool enabled);
 
+// Application-static magnitude of an LZ4F negative compression level;0 keeps defaults.
+void setLz4FrameFastCompressionLevel(int32_t level);
+
 std::unique_ptr<arrow::util::Codec> createCompressionCodec(
     arrow::Compression::type compressedType,
     CodecBackend codecBackend,

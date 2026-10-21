@@ -175,6 +175,14 @@ object VeloxConfig extends ConfigRegistry {
       .checkValue(v => v >= 1 && v <= 100, "Must be between 1 and 100")
       .createWithDefault(80)
 
+  val SHUFFLE_LZ4_FRAME_FAST_COMPRESSION_LEVEL =
+    buildStaticConf(
+      "spark.gluten.sql.columnar.backend.velox.shuffle.lz4Frame.fastCompressionLevel")
+      .doc("Magnitude of the native LZ4F negative compression level, favoring speed over ratio. Zero preserves defaults. Standard independent frames, codec and task memory budgets remain unchanged. Set before Spark starts.")
+      .intConf
+      .checkValue(v => v >= 0 && v <= 32, "Must be between0and32")
+      .createWithDefault(0)
+
   val ROW_CONTAINER_BATCH_STRING_EXTRACTION_ENABLED =
     buildStaticConf(
       "spark.gluten.sql.columnar.backend.velox.rowContainer.batchStringExtraction.enabled")

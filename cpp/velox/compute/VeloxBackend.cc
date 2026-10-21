@@ -207,6 +207,8 @@ void VeloxBackend::init(
       "spark.gluten.sql.columnar.backend.velox.shuffle."
       "arrowMemoryManagerReuse.enabled",
       false));
+  setLz4FrameFastCompressionLevel(
+      backendConf_->get<int32_t>("spark.gluten.sql.columnar.backend.velox.shuffle.lz4Frame.fastCompressionLevel", 0));
   setLz4FrameContextReuseEnabled(backendConf_->get<bool>(
       "spark.gluten.sql.columnar.backend.velox.shuffle."
       "lz4FrameContextReuse.enabled",
