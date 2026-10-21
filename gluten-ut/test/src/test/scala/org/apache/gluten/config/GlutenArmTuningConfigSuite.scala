@@ -22,6 +22,35 @@ import org.apache.spark.sql.GlutenQueryTest
 import org.apache.spark.sql.test.SharedSparkSession
 
 class GlutenArmTuningConfigSuite extends GlutenQueryTest with SharedSparkSession {
+  test("batch hash-build store preserves duplicate joins nulls strings and decimals") {
+    if (BackendsApiManager.getBackendName != "velox") {
+      cancel("Batch hash-build store is specific to the Velox backend")
+    }
+    val query = """
+                  |SELECT /*+ SHUFFLE_HASH(r) */ l.id, r.s, r.v
+                  |FROM range(72) l LEFT JOIN (
+                  |  SELECT id % 19 AS k,
+                  |         CASE WHEN id % 7 = 0 THEN NULL
+                  |              ELSE concat('long-build-value-', CAST(id AS STRING)) END AS s,
+                  |         CAST(id / 3.0 AS DECIMAL(28, 4)) AS v
+                  |  FROM range(129)
+                  |) r ON l.id % 23 = r.k
+                  |""".stripMargin
+    val expected = withSQLConf("spark.gluten.enabled" -> "false") {
+      sql(query).collect().toSeq
+    }
+    Seq("false", "true").foreach {
+      enabled =>
+        withSQLConf(
+          "spark.gluten.enabled" -> "true",
+          "spark.sql.adaptive.enabled" -> "false",
+          "spark.gluten.sql.columnar.backend.velox.hashBuild.batchStore.enabled" -> enabled
+        ) {
+          checkAnswer(sql(query), expected)
+        }
+    }
+  }
+
   test("grouping-set batching preserves nulls decimal sums and duplicate sets") {
     if (BackendsApiManager.getBackendName != "velox") {
       cancel("Grouping-set batching is specific to the Velox backend")
@@ -96,9 +125,11 @@ class GlutenArmTuningConfigSuite extends GlutenQueryTest with SharedSparkSession
       (prefix + "hashJoin.adaptiveValueIds.minRows") -> "16384",
       (prefix + "hashJoin.adaptiveValueIds.minDistinctPct") -> "90",
       (prefix + "hashJoin.batchValueIds.enabled") -> "true",
+      (prefix + "hashBuild.batchStore.enabled") -> "true",
       (prefix + "aggregation.groupingSetsBatching.enabled") -> "true"
     )
     val native = GlutenConfig.getNativeSessionConf("velox", overrides)
     overrides.foreach { case (key, value) => assert(native(key) == value) }
   }
+
 }

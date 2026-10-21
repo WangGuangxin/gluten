@@ -975,6 +975,7 @@ JNIEXPORT jlong JNICALL Java_org_apache_gluten_vectorized_HashJoinBuilder_native
       queryConf.get<uint32_t>(kAbandonDedupHashMapMinRows, kAbandonDedupHashMapMinRowsDefault);
   const auto abandonHashBuildDedupMinPct =
       queryConf.get<uint32_t>(kAbandonDedupHashMapMinPct, kAbandonDedupHashMapMinPctDefault);
+  const bool batchStoreEnabled = queryConf.get<bool>(kHashBuildBatchStoreEnabled, false);
   const auto hashTableId = jStringToCString(env, tableId);
 
   // Convert Java String array to C++ vector<string>
@@ -1044,7 +1045,8 @@ JNIEXPORT jlong JNICALL Java_org_apache_gluten_vectorized_HashJoinBuilder_native
         abandonHashBuildDedupMinRows,
         abandonHashBuildDedupMinPct,
         cb,
-        memoryPool);
+        memoryPool,
+        batchStoreEnabled);
 
     auto mainTable = builder->uniqueTable();
     mainTable->prepareJoinTable(
@@ -1106,7 +1108,8 @@ JNIEXPORT jlong JNICALL Java_org_apache_gluten_vectorized_HashJoinBuilder_native
           abandonHashBuildDedupMinRows,
           abandonHashBuildDedupMinPct,
           threadBatches,
-          threadMemoryPool);
+          threadMemoryPool,
+          batchStoreEnabled);
 
       hashTableBuilders[t] = std::move(builder);
       otherTables[t] = hashTableBuilders[t]->uniqueTable();

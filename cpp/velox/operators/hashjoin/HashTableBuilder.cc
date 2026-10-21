@@ -38,7 +38,8 @@ HashTableBuilder::HashTableBuilder(
     uint32_t minTableRowsForParallelJoinBuild,
     uint32_t joinBuildVectorHasherMaxNumDistinct,
     uint32_t abandonHashBuildDedupMinRows,
-    uint32_t abandonHashBuildDedupMinPct)
+    uint32_t abandonHashBuildDedupMinPct,
+    bool batchStoreEnabled)
     : joinType_{joinType},
       nullAware_{nullAware},
       withFilter_(withFilter),
@@ -50,7 +51,8 @@ HashTableBuilder::HashTableBuilder(
       joinBuildVectorHasherMaxNumDistinct_(joinBuildVectorHasherMaxNumDistinct),
       abandonHashBuildDedupMinRows_(abandonHashBuildDedupMinRows),
       abandonHashBuildDedupMinPct_(abandonHashBuildDedupMinPct),
-      filterPropagatesNulls_(filterPropagatesNulls) {
+      filterPropagatesNulls_(filterPropagatesNulls),
+      batchStoreEnabled_(batchStoreEnabled) {
   dropDuplicates_ =
       !withFilter_ && (isLeftSemiFilterJoin(joinType_) || isLeftSemiProjectJoin(joinType_) || isAntiJoin(joinType_));
   const auto numKeys = joinKeys.size();
@@ -315,6 +317,30 @@ void HashTableBuilder::addInput(facebook::velox::RowVectorPtr input) {
   }
   auto rows = uniqueTable_->rows();
   auto nextOffset = rows->nextOffset();
+
+  if (batchStoreEnabled_ && activeRows_.isAllSelected() && activeRows_.end() >= 32) {
+    const auto count = activeRows_.end();
+    if (!batchStoreRows_ || batchStoreRows_->capacity() < count * sizeof(char*)) {
+      batchStoreRows_ = facebook::velox::AlignedBuffer::allocate<char*>(count, pool_);
+    }
+    auto* destinations = batchStoreRows_->asMutable<char*>();
+    for (vector_size_t row = 0; row < count; ++row) {
+      destinations[row] = rows->newRow();
+      if (nextOffset) {
+        *reinterpret_cast<char**>(destinations[row] + nextOffset) = nullptr;
+      }
+    }
+    const auto range = folly::Range<char**>(destinations, count);
+    for (auto i = 0; i < hashers.size(); ++i) {
+      rows->store(hashers[i]->decodedVector(), range, i);
+    }
+    for (auto i = 0; i < dependentChannels_.size(); ++i) {
+      rows->store(*decoders_[i], range, i + hashers.size());
+    }
+    batchStoredRows_ += count;
+    return;
+  }
+  scalarStoredRows_ += activeRows_.countSelected();
 
   activeRows_.applyToSelected([&](auto rowIndex) {
     char* newRow = rows->newRow();

@@ -533,6 +533,8 @@ std::unordered_map<std::string, std::string> WholeStageResultIterator::getQueryC
   std::unordered_map<std::string, std::string> configs = {};
   configs[velox::core::QueryConfig::kHashJoinBatchValueIdsEnabled] =
       veloxCfg_->get<bool>(kHashJoinBatchValueIdsEnabled, false) ? "true" : "false";
+  configs[velox::core::QueryConfig::kHashBuildBatchStoreEnabled] =
+      veloxCfg_->get<bool>(kHashBuildBatchStoreEnabled, false) ? "true" : "false";
   configs[velox::core::QueryConfig::kGroupingSetsBatchingEnabled] =
       veloxCfg_->get<bool>(kGroupingSetsBatchingEnabled, false) ? "true" : "false";
   configs[velox::core::QueryConfig::kHashJoinNumParallelChains] =

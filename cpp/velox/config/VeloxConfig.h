@@ -33,6 +33,8 @@ const std::string kHashJoinAdaptiveValueIdsMinDistinctPct =
     "spark.gluten.sql.columnar.backend.velox.hashJoin.adaptiveValueIds.minDistinctPct";
 const std::string kHashJoinBatchValueIdsEnabled =
     "spark.gluten.sql.columnar.backend.velox.hashJoin.batchValueIds.enabled";
+const std::string kHashBuildBatchStoreEnabled = "spark.gluten.sql.columnar.backend.velox.hashBuild.batchStore.enabled";
+
 const std::string kGroupingSetsBatchingEnabled =
     "spark.gluten.sql.columnar.backend.velox.aggregation.groupingSetsBatching.enabled";
 // memory
@@ -136,6 +138,7 @@ const bool kEnableUserExceptionStacktraceDefault = true;
 
 const std::string kRowContainerBatchStringExtractionEnabled =
     "spark.gluten.sql.columnar.backend.velox.rowContainer.batchStringExtraction.enabled";
+
 
 const std::string kEnableSystemExceptionStacktrace =
     "spark.gluten.sql.columnar.backend.velox.enableSystemExceptionStacktrace";

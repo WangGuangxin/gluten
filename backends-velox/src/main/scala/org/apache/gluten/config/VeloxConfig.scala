@@ -136,6 +136,12 @@ class VeloxConfig(conf: SQLConf) extends GlutenConfig(conf) {
 }
 
 object VeloxConfig extends ConfigRegistry {
+  val HASH_BUILD_BATCH_STORE_ENABLED =
+    buildConf("spark.gluten.sql.columnar.backend.velox.hashBuild.batchStore.enabled")
+      .doc("Store dense append-only hash build input one column at a time.")
+      .booleanConf
+      .createWithDefault(false)
+
   val HASH_JOIN_BATCH_VALUE_IDS_ENABLED =
     buildConf("spark.gluten.sql.columnar.backend.velox.hashJoin.batchValueIds.enabled")
       .doc("Reuse repeated key value IDs during hash join build, including deduplicating builds.")

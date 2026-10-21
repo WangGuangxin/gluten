@@ -87,7 +87,8 @@ std::shared_ptr<HashTableBuilder> nativeHashTableBuild(
     uint32_t abandonHashBuildDedupMinRows,
     uint32_t abandonHashBuildDedupMinPct,
     std::vector<std::shared_ptr<ColumnarBatch>>& batches,
-    std::shared_ptr<facebook::velox::memory::MemoryPool> memoryPool);
+    std::shared_ptr<facebook::velox::memory::MemoryPool> memoryPool,
+    bool batchStoreEnabled = false);
 
 long getJoin(const std::string& hashTableId);
 

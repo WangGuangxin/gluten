@@ -106,6 +106,9 @@ gtest_discover_tests(fixed_width_gather_test DISCOVERY_MODE PRE_TEST)
 
 add_velox_test(velox_shuffle_writer_test SOURCES VeloxShuffleWriterTest.cc)
 
+add_velox_test(velox_hash_table_batch_store_test SOURCES
+               HashTableBuilderBatchStoreTest.cc)
+
 add_velox_test(velox_hash_shuffle_writer_input_encoding_test SOURCES
                VeloxHashShuffleWriterInputEncodingTest.cc)
 

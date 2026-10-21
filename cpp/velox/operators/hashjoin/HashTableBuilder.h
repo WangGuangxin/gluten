@@ -43,7 +43,8 @@ class HashTableBuilder {
       uint32_t minTableRowsForParallelJoinBuild,
       uint32_t joinBuildVectorHasherMaxNumDistinct,
       uint32_t abandonHashBuildDedupMinRows,
-      uint32_t abandonHashBuildDedupMinPct);
+      uint32_t abandonHashBuildDedupMinPct,
+      bool batchStoreEnabled = false);
 
   void addInput(facebook::velox::RowVectorPtr input);
 
@@ -85,6 +86,14 @@ class HashTableBuilder {
 
   uint32_t joinBuildVectorHasherMaxNumDistinct() const {
     return joinBuildVectorHasherMaxNumDistinct_;
+  }
+
+  uint64_t batchStoredRows() const {
+    return batchStoredRows_;
+  }
+
+  uint64_t scalarStoredRows() const {
+    return scalarStoredRows_;
   }
 
  private:
@@ -159,6 +168,10 @@ class HashTableBuilder {
   uint32_t abandonHashBuildDedupMinPct_{0};
   bool filterPropagatesNulls_{false};
   int64_t hashTableMemoryUsage_{0};
+  const bool batchStoreEnabled_;
+  facebook::velox::BufferPtr batchStoreRows_;
+  uint64_t batchStoredRows_{0};
+  uint64_t scalarStoredRows_{0};
 };
 
 } // namespace gluten
