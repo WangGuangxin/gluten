@@ -188,6 +188,12 @@ object VeloxConfig extends ConfigRegistry {
       .booleanConf
       .createWithDefault(true)
 
+  val ROW_CONTAINER_STRING_EQUALITY_ENABLED =
+    buildStaticConf("spark.gluten.sql.columnar.backend.velox.rowContainer.stringEquality.enabled")
+      .doc("Use equality-only string key comparison. Set before Spark starts.")
+      .booleanConf
+      .createWithDefault(false)
+
   val HASH_JOIN_NUM_PARALLEL_CHAINS =
     buildConf("spark.gluten.sql.columnar.backend.velox.hashJoin.numParallelChains")
       .doc("Number of interleaved duplicate-key join chains. The default preserves eight chains.")

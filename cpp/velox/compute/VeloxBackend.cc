@@ -68,6 +68,7 @@
 
 DECLARE_bool(velox_exception_user_stacktrace_enabled);
 DECLARE_bool(velox_row_container_batch_string_extraction_enabled);
+DECLARE_bool(velox_row_container_string_equality_enabled);
 DECLARE_int32(velox_memory_num_shared_leaf_pools);
 DECLARE_bool(velox_memory_use_hugepages);
 DECLARE_bool(velox_ssd_odirect);
@@ -174,6 +175,10 @@ void VeloxBackend::init(
   // Application-static: never mutate this flag from a task/query config.
   FLAGS_velox_row_container_batch_string_extraction_enabled =
       backendConf_->get<bool>(kRowContainerBatchStringExtractionEnabled, false);
+  FLAGS_velox_row_container_string_equality_enabled =
+      backendConf_->get<bool>(kRowContainerStringEqualityEnabled, false);
+
+
 
   // Set velox_exception_user_stacktrace_enabled.
   FLAGS_velox_exception_user_stacktrace_enabled =
@@ -186,7 +191,8 @@ void VeloxBackend::init(
   // Set velox_memory_use_hugepages.
   FLAGS_velox_memory_use_hugepages = backendConf_->get<bool>(kMemoryUseHugePages, kMemoryUseHugePagesDefault);
 
-  // Set cache_prefetch_min_pct default as 0 to force all loads are prefetched in DirectBufferInput.
+  // Set cache_prefetch_min_pct default as 0 to force all loads are prefetched
+  // in DirectBufferInput.
   FLAGS_cache_prefetch_min_pct = backendConf_->get<int>(kCachePrefetchMinPct, 0);
 
   hiveConnectorConfig_ = createHiveConnectorConfig(backendConf_);
@@ -282,10 +288,11 @@ void VeloxBackend::init(
 
   initUdf();
 
-  // Initialize Velox-side memory manager for current process. The memory manager
-  // will be used during spill calls so we don't track it with Spark off-heap memory instead
-  // we rely on overhead memory. If we track it with off-heap memory, recursive reservations from
-  // Spark off-heap memory pool will be conducted to cause unexpected OOMs.
+  // Initialize Velox-side memory manager for current process. The memory
+  // manager will be used during spill calls so we don't track it with Spark
+  // off-heap memory instead we rely on overhead memory. If we track it with
+  // off-heap memory, recursive reservations from Spark off-heap memory pool
+  // will be conducted to cause unexpected OOMs.
   auto sparkOverhead = backendConf_->get<int64_t>(kSparkOverheadMemory);
   int64_t memoryManagerCapacity;
   if (sparkOverhead.has_value()) {
@@ -310,8 +317,8 @@ void VeloxBackend::init(
   options.allocatorCapacity = memoryManagerCapacity;
   facebook::velox::memory::initializeMemoryManager(options);
 
-  // local cache persistent relies on the cache pool from root memory pool so we need to init this
-  // after the memory manager instanced
+  // local cache persistent relies on the cache pool from root memory pool so we
+  // need to init this after the memory manager instanced
   initCache();
 
   registerShuffleDictionaryWriterFactory([](MemoryManager* memoryManager, arrow::util::Codec* codec) {
@@ -333,11 +340,13 @@ ReaderThreadPool* VeloxBackend::getReaderThreadPool() {
   return readerThreadPool_.get();
 }
 
-// JNI-or-local filesystem, for spilling-to-heap if we have extra JVM heap spaces
+// JNI-or-local filesystem, for spilling-to-heap if we have extra JVM heap
+// spaces
 void VeloxBackend::initJolFilesystem() {
   int64_t maxSpillFileSize = backendConf_->get<int64_t>(kMaxSpillFileSize, kMaxSpillFileSizeDefault);
 
-  // FIXME It's known that if spill compression is disabled, the actual spill file size may
+  // FIXME It's known that if spill compression is disabled, the actual spill
+  // file size may
   //   in crease beyond this limit a little (maximum 64 rows which is by default
   //   one compression page)
   registerJolFileSystem(maxSpillFileSize);
@@ -387,7 +396,8 @@ void VeloxBackend::initCache() {
     options.capacity = memCacheSize;
     cacheAllocator_ = std::make_shared<velox::memory::MmapAllocator>(options);
     if (ssdCacheSize == 0) {
-      LOG(INFO) << "AsyncDataCache will do memory caching only as ssd cache size is 0";
+      LOG(INFO) << "AsyncDataCache will do memory caching only as ssd cache "
+                   "size is 0";
       // TODO: this is not tracked by Spark.
       asyncDataCache_ = velox::cache::AsyncDataCache::create(cacheAllocator_.get());
     } else {
@@ -454,7 +464,8 @@ void VeloxBackend::create(
 
 VeloxBackend* VeloxBackend::get() {
   if (!instance_) {
-    LOG(WARNING) << "VeloxBackend instance is null, please invoke VeloxBackend#create before use.";
+    LOG(WARNING) << "VeloxBackend instance is null, please invoke "
+                    "VeloxBackend#create before use.";
     throw GlutenException("VeloxBackend instance is null.");
   }
   return instance_.get();
@@ -471,8 +482,9 @@ void VeloxBackend::tearDown() {
 #endif
 
   // Destruct IOThreadPoolExecutor will join all threads.
-  // On threads exit, thread local variables can be constructed with referencing global variables.
-  // So, we need to destruct IOThreadPoolExecutor and stop the threads before global variables get destructed.
+  // On threads exit, thread local variables can be constructed with referencing
+  // global variables. So, we need to destruct IOThreadPoolExecutor and stop the
+  // threads before global variables get destructed.
   executor_.reset();
   spillExecutor_.reset();
   ioExecutor_.reset();

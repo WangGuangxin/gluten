@@ -110,6 +110,19 @@ class GlutenArmTuningConfigSuite extends GlutenQueryTest with SharedSparkSession
     }
   }
 
+  test("string equality reaches application-static native initialization") {
+    if (BackendsApiManager.getBackendName != "velox") {
+      cancel("String equality is specific to the Velox backend")
+    }
+    val key = "spark.gluten.sql.columnar.backend.velox.rowContainer.stringEquality.enabled"
+    Seq("false", "true").foreach {
+      enabled =>
+        val native = GlutenConfig.getNativeBackendConf("velox", Map(key -> enabled))
+        assert(native.get(key) == enabled)
+        assert(!GlutenConfig.getNativeSessionConf("velox", Map(key -> enabled)).contains(key))
+    }
+  }
+
   test("ARM tuning values reach native session configuration") {
     if (BackendsApiManager.getBackendName != "velox") {
       cancel("ARM tuning is specific to the Velox backend")
