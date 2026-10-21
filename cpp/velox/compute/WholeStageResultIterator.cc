@@ -535,6 +535,14 @@ std::unordered_map<std::string, std::string> WholeStageResultIterator::getQueryC
       veloxCfg_->get<bool>(kHashJoinBatchValueIdsEnabled, false) ? "true" : "false";
   configs[velox::core::QueryConfig::kHashBuildBatchStoreEnabled] =
       veloxCfg_->get<bool>(kHashBuildBatchStoreEnabled, false) ? "true" : "false";
+  configs[velox::core::QueryConfig::kGroupingSetsValueIdsEnabled] =
+      veloxCfg_->get<bool>(kGroupingSetsValueIdsEnabled, false) ? "true" : "false";
+  configs[velox::core::QueryConfig::kGroupingSetsValueIdsReuseEnabled] =
+      veloxCfg_->get<bool>(kGroupingSetsValueIdsReuseEnabled, true) ? "true" : "false";
+  configs[velox::core::QueryConfig::kGroupingSetsValueIdsMaxStringBytes] =
+      std::to_string(veloxCfg_->get<uint64_t>(kGroupingSetsValueIdsMaxStringBytes, 33554432));
+  configs[velox::core::QueryConfig::kGroupingSetsValueIdsMaxStringValues] =
+      std::to_string(veloxCfg_->get<int64_t>(kGroupingSetsValueIdsMaxStringValues, 500000));
   configs[velox::core::QueryConfig::kGroupingSetsBatchingEnabled] =
       veloxCfg_->get<bool>(kGroupingSetsBatchingEnabled, false) ? "true" : "false";
   configs[velox::core::QueryConfig::kHashJoinNumParallelChains] =

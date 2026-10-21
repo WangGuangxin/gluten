@@ -152,6 +152,21 @@ class GlutenArmTuningConfigSuite extends GlutenQueryTest with SharedSparkSession
     }
   }
 
+  test("Expand value ID tuning reaches per-query native configuration") {
+    if (BackendsApiManager.getBackendName != "velox") {
+      cancel("Grouping value IDs are specific to Velox")
+    }
+    val prefix = "spark.gluten.sql.columnar.backend.velox.aggregation.groupingSetsValueIds."
+    val values = Map(
+      (prefix + "enabled") -> "true",
+      (prefix + "reuse.enabled") -> "true",
+      (prefix + "maxDistinctStringBytes") -> "33554432",
+      (prefix + "maxDistinctStringValues") -> "500000"
+    )
+    val native = GlutenConfig.getNativeSessionConf("velox", values)
+    values.foreach { case (key, value) => assert(native.get(key).contains(value)) }
+  }
+
   test("ARM tuning values reach native session configuration") {
     if (BackendsApiManager.getBackendName != "velox") {
       cancel("ARM tuning is specific to the Velox backend")

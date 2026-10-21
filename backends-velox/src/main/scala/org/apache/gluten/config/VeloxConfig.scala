@@ -213,6 +213,35 @@ object VeloxConfig extends ConfigRegistry {
       .booleanConf
       .createWithDefault(false)
 
+  val GROUPING_SETS_VALUE_IDS_ENABLED =
+    buildConf("spark.gluten.sql.columnar.backend.velox.aggregation.groupingSetsValueIds.enabled")
+      .doc("Larger string dictionaries only for Expand-fed partial aggregation.")
+      .booleanConf
+      .createWithDefault(false)
+
+  val GROUPING_SETS_VALUE_IDS_REUSE_ENABLED =
+    buildConf(
+      "spark.gluten.sql.columnar.backend.velox.aggregation.groupingSetsValueIds.reuse.enabled")
+      .doc("Reuse exact string value IDs across projections within one Expand input batch.")
+      .booleanConf
+      .createWithDefault(true)
+
+  val GROUPING_SETS_VALUE_IDS_MAX_STRING_BYTES =
+    buildConf("spark.gluten.sql.columnar.backend.velox.aggregation.groupingSetsValueIds.maxDistinctStringBytes")
+      .doc("String dictionary byte threshold for eligible partial aggregation only.")
+      .longConf
+      .checkValue(
+        v => v >= (1L << 20) && v <= (64L << 20),
+        "Outside supported grouping dictionary range")
+      .createWithDefault(33554432L)
+
+  val GROUPING_SETS_VALUE_IDS_MAX_STRING_VALUES =
+    buildConf("spark.gluten.sql.columnar.backend.velox.aggregation.groupingSetsValueIds.maxDistinctStringValues")
+      .doc("String dictionary value limit for eligible partial aggregation only.")
+      .longConf
+      .checkValue(v => v >= 100000L && v <= 1000000L, "Outside supported grouping dictionary range")
+      .createWithDefault(500000L)
+
   val HASH_JOIN_NUM_PARALLEL_CHAINS =
     buildConf("spark.gluten.sql.columnar.backend.velox.hashJoin.numParallelChains")
       .doc("Number of interleaved duplicate-key join chains. The default preserves eight chains.")

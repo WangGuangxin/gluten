@@ -34,6 +34,14 @@ const std::string kHashJoinAdaptiveValueIdsMinDistinctPct =
 const std::string kHashJoinBatchValueIdsEnabled =
     "spark.gluten.sql.columnar.backend.velox.hashJoin.batchValueIds.enabled";
 const std::string kHashBuildBatchStoreEnabled = "spark.gluten.sql.columnar.backend.velox.hashBuild.batchStore.enabled";
+const std::string kGroupingSetsValueIdsEnabled =
+    "spark.gluten.sql.columnar.backend.velox.aggregation.groupingSetsValueIds.enabled";
+const std::string kGroupingSetsValueIdsReuseEnabled =
+    "spark.gluten.sql.columnar.backend.velox.aggregation.groupingSetsValueIds.reuse.enabled";
+const std::string kGroupingSetsValueIdsMaxStringBytes =
+    "spark.gluten.sql.columnar.backend.velox.aggregation.groupingSetsValueIds.maxDistinctStringBytes";
+const std::string kGroupingSetsValueIdsMaxStringValues =
+    "spark.gluten.sql.columnar.backend.velox.aggregation.groupingSetsValueIds.maxDistinctStringValues";
 
 const std::string kGroupingSetsBatchingEnabled =
     "spark.gluten.sql.columnar.backend.velox.aggregation.groupingSetsBatching.enabled";
