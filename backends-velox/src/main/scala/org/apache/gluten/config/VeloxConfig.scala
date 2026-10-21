@@ -38,6 +38,11 @@ class VeloxConfig(conf: SQLConf) extends GlutenConfig(conf) {
     getConf(RUNTIME_BLOOM_CASCADE_MAX_CREATION_KEY_BYTES)
   def runtimeBloomCascadeMaxFilters: Int = getConf(RUNTIME_BLOOM_CASCADE_MAX_FILTERS)
 
+  def runtimeBloomSelectiveKeysEnabled: Boolean = getConf(RUNTIME_BLOOM_SELECTIVE_KEYS_ENABLED)
+  def runtimeBloomSelectiveKeysMaxCreationKeyBytes: Long =
+    getConf(RUNTIME_BLOOM_SELECTIVE_KEYS_MAX_CREATION_KEY_BYTES)
+  def runtimeBloomSelectiveKeysMaxFilters: Int = getConf(RUNTIME_BLOOM_SELECTIVE_KEYS_MAX_FILTERS)
+
   def veloxSpillFileSystem: String = getConf(COLUMNAR_VELOX_SPILL_FILE_SYSTEM)
 
   def veloxResizeBatchesShuffleInput: Boolean =
@@ -207,6 +212,23 @@ object VeloxConfig extends ConfigRegistry {
   val RUNTIME_BLOOM_CASCADE_MAX_FILTERS =
     buildConf("spark.gluten.sql.columnar.backend.velox.runtimeBloom.cascade.maxFilters")
       .doc("Maximum additional filters in a single cascade wave per query, between zero and ten.")
+      .intConf.checkValue(
+        v => v >= 0 && v <= 10,
+        "Must be between zero and ten").createWithDefault(2)
+
+  val RUNTIME_BLOOM_SELECTIVE_KEYS_ENABLED =
+    buildConf("spark.gluten.sql.columnar.backend.velox.runtimeBloom.selectiveKeys.enabled")
+      .doc("Build bounded key-domain Bloom filters from flat dimensions with at least two distinct literal equality predicates; use Spark constraint inference to prune equivalent aggregate grouping keys. Disabled by default.")
+      .booleanConf.createWithDefault(false)
+  val RUNTIME_BLOOM_SELECTIVE_KEYS_MAX_CREATION_KEY_BYTES =
+    buildConf(
+      "spark.gluten.sql.columnar.backend.velox.runtimeBloom.selectiveKeys.maxCreationKeyBytes")
+      .doc("Maximum estimated projected-key bytes for a selective-dimension creation scan. Existing Spark Bloom state memory limits remain in force.")
+      .longConf.checkValue(_ > 0, "Must be positive").createWithDefault(2147483648L)
+  val RUNTIME_BLOOM_SELECTIVE_KEYS_MAX_FILTERS =
+    buildConf("spark.gluten.sql.columnar.backend.velox.runtimeBloom.selectiveKeys.maxFilters")
+      .doc(
+        "Maximum additional filters in a single selective-key wave per query, between zero and ten.")
       .intConf.checkValue(
         v => v >= 0 && v <= 10,
         "Must be between zero and ten").createWithDefault(2)
