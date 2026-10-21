@@ -20,3 +20,4 @@ add_test_case(ffor_codec_test SOURCES FForCodecTest.cc)
 add_test_case(print_config_test SOURCES PrintConfigTest.cc)
 
 add_test_case(arrow_memory_manager_reuse_test SOURCES ArrowMemoryManagerReuseTest.cc)
+add_test_case(lz4_frame_context_reuse_test SOURCES Lz4FrameContextReuseTest.cc)

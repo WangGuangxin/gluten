@@ -23,6 +23,8 @@ namespace gluten {
 
 enum CodecBackend { NONE, QAT };
 
+void setLz4FrameContextReuseEnabled(bool enabled);
+
 std::unique_ptr<arrow::util::Codec> createCompressionCodec(
     arrow::Compression::type compressedType,
     CodecBackend codecBackend,

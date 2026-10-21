@@ -42,6 +42,7 @@
 #include "compute/VeloxRuntime.h"
 #include "config/VeloxConfig.h"
 #include "memory/ArrowMemoryPool.h"
+#include "utils/Compression.h"
 #ifdef ENABLE_S3
 #include "filesystem/GlutenS3FileSystem.h"
 #endif
@@ -188,6 +189,10 @@ void VeloxBackend::init(
   setArrowMemoryManagerReuseEnabled(backendConf_->get<bool>(
       "spark.gluten.sql.columnar.backend.velox.shuffle."
       "arrowMemoryManagerReuse.enabled",
+      false));
+  setLz4FrameContextReuseEnabled(backendConf_->get<bool>(
+      "spark.gluten.sql.columnar.backend.velox.shuffle."
+      "lz4FrameContextReuse.enabled",
       false));
 
   // Set velox_exception_user_stacktrace_enabled.

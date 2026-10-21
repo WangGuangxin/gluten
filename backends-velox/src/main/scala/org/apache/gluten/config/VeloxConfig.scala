@@ -207,6 +207,12 @@ object VeloxConfig extends ConfigRegistry {
       .booleanConf
       .createWithDefault(false)
 
+  val SHUFFLE_LZ4_FRAME_CONTEXT_REUSE_ENABLED =
+    buildStaticConf("spark.gluten.sql.columnar.backend.velox.shuffle.lz4FrameContextReuse.enabled")
+      .doc("Reuse thread-local LZ4 scratch context for independent frames; requires LZ4 1.10. Set before Spark starts.")
+      .booleanConf
+      .createWithDefault(false)
+
   val HASH_JOIN_NUM_PARALLEL_CHAINS =
     buildConf("spark.gluten.sql.columnar.backend.velox.hashJoin.numParallelChains")
       .doc("Number of interleaved duplicate-key join chains. The default preserves eight chains.")

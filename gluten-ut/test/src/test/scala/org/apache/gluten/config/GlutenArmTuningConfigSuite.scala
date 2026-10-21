@@ -139,7 +139,7 @@ class GlutenArmTuningConfigSuite extends GlutenQueryTest with SharedSparkSession
     if (BackendsApiManager.getBackendName != "velox") {
       cancel("Shuffle reuse is specific to the Velox backend")
     }
-    Seq("arrowMemoryManagerReuse").foreach {
+    Seq("arrowMemoryManagerReuse", "lz4FrameContextReuse").foreach {
       feature =>
         val key = s"spark.gluten.sql.columnar.backend.velox.shuffle.$feature.enabled"
         Seq("false", "true").foreach {
