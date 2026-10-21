@@ -200,5 +200,22 @@ class GlutenArmTuningConfigSuite extends GlutenQueryTest with SharedSparkSession
     val native = GlutenConfig.getNativeSessionConf("velox", overrides)
     overrides.foreach { case (key, value) => assert(native(key) == value) }
   }
+  test("compact join settings reach application-static native initialization") {
+    if (BackendsApiManager.getBackendName != "velox") {
+      cancel("Compact join chains are specific to Velox")
+    }
+    val prefix = "spark.gluten.sql.columnar.backend.velox.hashJoin."
+    val settings = Map(
+      (prefix + "compactChains.enabled") -> "true",
+      (prefix + "compactChains.maxBytes") -> "0",
+      (prefix + "estimatedWidthOutput.enabled") -> "true")
+    val backend = GlutenConfig.getNativeBackendConf("velox", settings)
+    val session = GlutenConfig.getNativeSessionConf("velox", settings)
+    settings.foreach {
+      case (key, value) =>
+        assert(backend.get(key) == value)
+        assert(!session.contains(key))
+    }
+  }
 
 }

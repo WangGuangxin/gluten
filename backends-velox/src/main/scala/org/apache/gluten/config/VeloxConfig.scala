@@ -194,6 +194,26 @@ object VeloxConfig extends ConfigRegistry {
       .booleanConf
       .createWithDefault(false)
 
+  val HASH_JOIN_COMPACT_CHAINS_ENABLED =
+    buildStaticConf("spark.gluten.sql.columnar.backend.velox.hashJoin.compactChains.enabled")
+      .doc("Use bounded immutable posting lists for long join chains. Set before Spark starts.")
+      .booleanConf
+      .createWithDefault(false)
+
+  val HASH_JOIN_COMPACT_CHAINS_MAX_BYTES =
+    buildStaticConf("spark.gluten.sql.columnar.backend.velox.hashJoin.compactChains.maxBytes")
+      .doc("Maximum posting list/index bytes per table; zero disables optional allocation.")
+      .longConf
+      .checkValue(v => v >= 0 && v <= 536870912L, "Must be between 0 and 512 MiB")
+      .createWithDefault(134217728L)
+
+  val HASH_JOIN_ESTIMATED_WIDTH_OUTPUT_ENABLED =
+    buildStaticConf("spark.gluten.sql.columnar.backend.velox.hashJoin.estimatedWidthOutput.enabled")
+      .doc(
+        "Skip per-row accounting when the existing row-size estimate proves a row-limited batch.")
+      .booleanConf
+      .createWithDefault(false)
+
   val HASH_JOIN_HEAD_CHAIN_DRAIN_ENABLED =
     buildStaticConf("spark.gluten.sql.columnar.backend.velox.hashJoin.headChainDrain.enabled")
       .doc("Drain long duplicate chains after later chains are buffered. Set before Spark starts.")

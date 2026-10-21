@@ -73,6 +73,9 @@ DECLARE_bool(velox_row_container_batch_string_extraction_enabled);
 DECLARE_bool(velox_row_container_string_equality_enabled);
 DECLARE_bool(velox_hash_join_fixed_width_output_enabled);
 DECLARE_bool(velox_hash_join_head_chain_drain_enabled);
+DECLARE_bool(velox_hash_join_compact_chains_enabled);
+DECLARE_int64(velox_hash_join_compact_chains_max_bytes);
+DECLARE_bool(velox_hash_join_estimated_width_output_enabled);
 DECLARE_int32(velox_memory_num_shared_leaf_pools);
 DECLARE_bool(velox_memory_use_hugepages);
 DECLARE_bool(velox_ssd_odirect);
@@ -182,6 +185,14 @@ void VeloxBackend::init(
   FLAGS_velox_row_container_string_equality_enabled =
       backendConf_->get<bool>(kRowContainerStringEqualityEnabled, false);
 
+  FLAGS_velox_hash_join_compact_chains_enabled =
+      backendConf_->get<bool>("spark.gluten.sql.columnar.backend.velox.hashJoin.compactChains.enabled", false);
+  FLAGS_velox_hash_join_compact_chains_max_bytes = backendConf_->get<int64_t>(
+      "spark.gluten.sql.columnar.backend.velox.hashJoin.compactChains.maxBytes", 128LL << 20);
+  FLAGS_velox_hash_join_estimated_width_output_enabled = backendConf_->get<bool>(
+      "spark.gluten.sql.columnar.backend.velox."
+      "hashJoin.estimatedWidthOutput.enabled",
+      false);
   FLAGS_velox_hash_join_head_chain_drain_enabled =
       backendConf_->get<bool>("spark.gluten.sql.columnar.backend.velox.hashJoin.headChainDrain.enabled", false);
   FLAGS_velox_hash_join_fixed_width_output_enabled = backendConf_->get<bool>(
