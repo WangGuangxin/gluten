@@ -200,6 +200,13 @@ object VeloxConfig extends ConfigRegistry {
       .booleanConf
       .createWithDefault(false)
 
+  val SHUFFLE_ARROW_MEMORY_MANAGER_REUSE_ENABLED =
+    buildStaticConf(
+      "spark.gluten.sql.columnar.backend.velox.shuffle.arrowMemoryManagerReuse.enabled")
+      .doc("Reuse a CPU MemoryManager per Gluten Arrow pool. Set before Spark starts.")
+      .booleanConf
+      .createWithDefault(false)
+
   val HASH_JOIN_NUM_PARALLEL_CHAINS =
     buildConf("spark.gluten.sql.columnar.backend.velox.hashJoin.numParallelChains")
       .doc("Number of interleaved duplicate-key join chains. The default preserves eight chains.")

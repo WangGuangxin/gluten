@@ -135,6 +135,23 @@ class GlutenArmTuningConfigSuite extends GlutenQueryTest with SharedSparkSession
     }
   }
 
+  test("shuffle reuse switches reach application-static native initialization") {
+    if (BackendsApiManager.getBackendName != "velox") {
+      cancel("Shuffle reuse is specific to the Velox backend")
+    }
+    Seq("arrowMemoryManagerReuse").foreach {
+      feature =>
+        val key = s"spark.gluten.sql.columnar.backend.velox.shuffle.$feature.enabled"
+        Seq("false", "true").foreach {
+          enabled =>
+            assert(GlutenConfig.getNativeBackendConf(
+              "velox",
+              Map(key -> enabled)).get(key) == enabled)
+            assert(!GlutenConfig.getNativeSessionConf("velox", Map(key -> enabled)).contains(key))
+        }
+    }
+  }
+
   test("ARM tuning values reach native session configuration") {
     if (BackendsApiManager.getBackendName != "velox") {
       cancel("ARM tuning is specific to the Velox backend")

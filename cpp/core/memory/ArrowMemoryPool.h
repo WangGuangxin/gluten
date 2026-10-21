@@ -17,6 +17,9 @@
 
 #pragma once
 
+#include <arrow/buffer.h>
+#include <mutex>
+
 #include "arrow/memory_pool.h" // IWYU pragma: keep
 
 #include "MemoryAllocator.h" // IWYU pragma: keep
@@ -61,8 +64,18 @@ class ArrowMemoryPool final : public arrow::MemoryPool {
 
   MemoryAllocator* allocator() const;
 
+  std::shared_ptr<arrow::MemoryManager> cachedMemoryManager();
+
  private:
   std::unique_ptr<MemoryAllocator> allocator_ = nullptr;
+  std::once_flag memoryManagerOnce_;
+  std::shared_ptr<arrow::MemoryManager> memoryManager_;
 };
+
+// Set once at backend startup before tasks begin. Other Arrow pools always
+// retain Arrow's own implementation and its global-finalization guard.
+void setArrowMemoryManagerReuseEnabled(bool enabled);
+arrow::Result<std::unique_ptr<arrow::ResizableBuffer>>
+allocateResizableBuffer(int64_t size, arrow::MemoryPool* pool, int64_t alignment = arrow::kDefaultBufferAlignment);
 
 } // namespace gluten

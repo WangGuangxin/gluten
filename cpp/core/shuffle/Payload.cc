@@ -16,6 +16,8 @@
  */
 #include "shuffle/Payload.h"
 
+#include "memory/ArrowMemoryPool.h"
+
 #include <arrow/buffer.h>
 #include <arrow/io/memory.h>
 #include <arrow/util/bitmap.h>
@@ -153,7 +155,7 @@ arrow::Status compressAndFlush(
   ScopedTimer timer(&compressTime);
   auto maxCompressedLength = codec->MaxCompressedLen(buffer->size(), buffer->data());
   ARROW_ASSIGN_OR_RAISE(
-      auto compressed, arrow::AllocateResizableBuffer(sizeof(int64_t) * 2 + maxCompressedLength, pool));
+      auto compressed, gluten::allocateResizableBuffer(sizeof(int64_t) * 2 + maxCompressedLength, pool));
   auto output = compressed->mutable_data();
   ARROW_ASSIGN_OR_RAISE(auto compressedSize, compressBuffer(buffer, output, maxCompressedLength, codec));
 
@@ -170,7 +172,7 @@ readUncompressedBuffer(arrow::io::InputStream* inputStream, arrow::MemoryPool* p
   if (bufferLength == kNullBuffer) {
     return nullptr;
   }
-  ARROW_ASSIGN_OR_RAISE(auto buffer, arrow::AllocateResizableBuffer(bufferLength, pool));
+  ARROW_ASSIGN_OR_RAISE(auto buffer, gluten::allocateResizableBuffer(bufferLength, pool));
   RETURN_NOT_OK(inputStream->Read(bufferLength, buffer->mutable_data()));
   return buffer;
 }
@@ -200,11 +202,11 @@ arrow::Result<std::shared_ptr<arrow::Buffer>> readCompressedBuffer(
     // then uncompressedLength (already read), then actualCompressedLen, then data.
     int64_t actualCompressedLen;
     RETURN_NOT_OK(inputStream->Read(sizeof(int64_t), &actualCompressedLen));
-    ARROW_ASSIGN_OR_RAISE(auto compressed, arrow::AllocateResizableBuffer(actualCompressedLen, pool));
+    ARROW_ASSIGN_OR_RAISE(auto compressed, gluten::allocateResizableBuffer(actualCompressedLen, pool));
     RETURN_NOT_OK(inputStream->Read(actualCompressedLen, compressed->mutable_data()));
 
     timer.switchTo(&decompressTime);
-    ARROW_ASSIGN_OR_RAISE(auto output, arrow::AllocateResizableBuffer(uncompressedLength, pool));
+    ARROW_ASSIGN_OR_RAISE(auto output, gluten::allocateResizableBuffer(uncompressedLength, pool));
     RETURN_NOT_OK(TypeAwareCompressCodec::decompress(
                       compressed->data(), actualCompressedLen, output->mutable_data(), uncompressedLength)
                       .status());
@@ -212,15 +214,15 @@ arrow::Result<std::shared_ptr<arrow::Buffer>> readCompressedBuffer(
   }
 
   if (compressedLength == kUncompressedBuffer) {
-    ARROW_ASSIGN_OR_RAISE(auto uncompressed, arrow::AllocateResizableBuffer(uncompressedLength, pool));
+    ARROW_ASSIGN_OR_RAISE(auto uncompressed, gluten::allocateResizableBuffer(uncompressedLength, pool));
     RETURN_NOT_OK(inputStream->Read(uncompressedLength, uncompressed->mutable_data()));
     return uncompressed;
   }
-  ARROW_ASSIGN_OR_RAISE(auto compressed, arrow::AllocateResizableBuffer(compressedLength, pool));
+  ARROW_ASSIGN_OR_RAISE(auto compressed, gluten::allocateResizableBuffer(compressedLength, pool));
   RETURN_NOT_OK(inputStream->Read(compressedLength, compressed->mutable_data()));
 
   timer.switchTo(&decompressTime);
-  ARROW_ASSIGN_OR_RAISE(auto output, arrow::AllocateResizableBuffer(uncompressedLength, pool));
+  ARROW_ASSIGN_OR_RAISE(auto output, gluten::allocateResizableBuffer(uncompressedLength, pool));
   RETURN_NOT_OK(codec->Decompress(compressedLength, compressed->data(), uncompressedLength, output->mutable_data()));
   return output;
 }
@@ -262,7 +264,7 @@ arrow::Result<std::unique_ptr<BlockPayload>> BlockPayload::fromBuffers(
     auto maxLength = maxCompressedLength(buffers, codec, bufferTypes);
 
     std::shared_ptr<arrow::Buffer> compressedBuffer;
-    ARROW_ASSIGN_OR_RAISE(compressedBuffer, arrow::AllocateResizableBuffer(maxLength, pool));
+    ARROW_ASSIGN_OR_RAISE(compressedBuffer, gluten::allocateResizableBuffer(maxLength, pool));
     auto* output = compressedBuffer->mutable_data();
 
     int64_t actualLength = 0;
@@ -452,7 +454,7 @@ arrow::Result<std::unique_ptr<InMemoryPayload>> InMemoryPayload::merge(
           merged[i] = nullptr;
         } else {
           ARROW_ASSIGN_OR_RAISE(
-              auto buffer, arrow::AllocateResizableBuffer(arrow::bit_util::BytesForBits(mergedRows), pool));
+              auto buffer, gluten::allocateResizableBuffer(arrow::bit_util::BytesForBits(mergedRows), pool));
           // Source is null, fill all true.
           arrow::bit_util::SetBitsTo(buffer->mutable_data(), 0, source->numRows(), true);
           // Write append bits.
@@ -470,7 +472,7 @@ arrow::Result<std::unique_ptr<InMemoryPayload>> InMemoryPayload::merge(
           RETURN_NOT_OK(resizable->Resize(mergedBytes));
         } else {
           // Otherwise copy source.
-          ARROW_ASSIGN_OR_RAISE(resizable, arrow::AllocateResizableBuffer(mergedBytes, pool));
+          ARROW_ASSIGN_OR_RAISE(resizable, gluten::allocateResizableBuffer(mergedBytes, pool));
           memcpy(resizable->mutable_data(), sourceBuffer->data(), sourceBufferSize);
         }
         if (!appendBuffer) {
@@ -494,7 +496,7 @@ arrow::Result<std::unique_ptr<InMemoryPayload>> InMemoryPayload::merge(
           RETURN_NOT_OK(resizable->Resize(mergedSize));
         } else {
           // Otherwise copy source.
-          ARROW_ASSIGN_OR_RAISE(resizable, arrow::AllocateResizableBuffer(mergedSize, pool));
+          ARROW_ASSIGN_OR_RAISE(resizable, gluten::allocateResizableBuffer(mergedSize, pool));
           memcpy(resizable->mutable_data(), sourceBuffer->data(), sourceBufferSize);
         }
         // Copy append.
@@ -539,7 +541,7 @@ arrow::Status InMemoryPayload::copyBuffers(arrow::MemoryPool* pool) {
       buffer = zeroLengthNullBuffer();
       continue;
     }
-    ARROW_ASSIGN_OR_RAISE(auto copy, arrow::AllocateResizableBuffer(buffer->size(), pool));
+    ARROW_ASSIGN_OR_RAISE(auto copy, gluten::allocateResizableBuffer(buffer->size(), pool));
     memcpy(copy->mutable_data(), buffer->data(), buffer->size());
     buffer = std::move(copy);
   }

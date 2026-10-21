@@ -41,6 +41,7 @@
 
 #include "compute/VeloxRuntime.h"
 #include "config/VeloxConfig.h"
+#include "memory/ArrowMemoryPool.h"
 #ifdef ENABLE_S3
 #include "filesystem/GlutenS3FileSystem.h"
 #endif
@@ -184,6 +185,10 @@ void VeloxBackend::init(
       "hashJoin.fixedWidthOutput.enabled",
       false);
 
+  setArrowMemoryManagerReuseEnabled(backendConf_->get<bool>(
+      "spark.gluten.sql.columnar.backend.velox.shuffle."
+      "arrowMemoryManagerReuse.enabled",
+      false));
 
   // Set velox_exception_user_stacktrace_enabled.
   FLAGS_velox_exception_user_stacktrace_enabled =

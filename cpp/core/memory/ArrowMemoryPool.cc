@@ -16,9 +16,101 @@
  */
 
 #include "ArrowMemoryPool.h"
+
+#include <arrow/device.h>
+#include <arrow/util/bit_util.h>
+#include <atomic>
+#include <limits>
 #include "utils/Exception.h"
 
 namespace gluten {
+namespace {
+std::atomic<bool> memoryManagerReuseEnabled{false};
+
+// Matches Arrow PoolBuffer's allocation, rounding, resize and padding contract.
+// Only Gluten-owned pools use this class. As with Arrow's custom-pool buffers,
+// the pool must outlive all buffers allocated from it.
+class GlutenPoolBuffer final : public arrow::ResizableBuffer {
+ public:
+  GlutenPoolBuffer(std::shared_ptr<arrow::MemoryManager> manager, ArrowMemoryPool* pool, int64_t alignment)
+      : ResizableBuffer(nullptr, 0, std::move(manager)), pool_(pool), alignment_(alignment) {}
+
+  ~GlutenPoolBuffer() override {
+    if (mutable_data()) {
+      pool_->Free(mutable_data(), capacity_, alignment_);
+    }
+  }
+
+  arrow::Status Reserve(int64_t capacity) override {
+    if (capacity < 0) {
+      return arrow::Status::Invalid("Negative buffer capacity: ", capacity);
+    }
+    auto* ptr = mutable_data();
+    if (!ptr || capacity > capacity_) {
+      ARROW_ASSIGN_OR_RAISE(auto rounded, roundCapacity(capacity));
+      if (ptr) {
+        ARROW_RETURN_NOT_OK(pool_->Reallocate(capacity_, rounded, alignment_, &ptr));
+      } else {
+        ARROW_RETURN_NOT_OK(pool_->Allocate(rounded, alignment_, &ptr));
+      }
+      data_ = ptr;
+      capacity_ = rounded;
+    }
+    return arrow::Status::OK();
+  }
+
+  arrow::Status Resize(int64_t size, bool shrinkToFit = true) override {
+    if (size < 0) {
+      return arrow::Status::Invalid("Negative buffer resize: ", size);
+    }
+    auto* ptr = mutable_data();
+    if (ptr && shrinkToFit && size <= size_) {
+      ARROW_ASSIGN_OR_RAISE(auto rounded, roundCapacity(size));
+      if (capacity_ != rounded) {
+        ARROW_RETURN_NOT_OK(pool_->Reallocate(capacity_, rounded, alignment_, &ptr));
+        data_ = ptr;
+        capacity_ = rounded;
+      }
+    } else {
+      ARROW_RETURN_NOT_OK(Reserve(size));
+    }
+    size_ = size;
+    return arrow::Status::OK();
+  }
+
+ private:
+  static arrow::Result<int64_t> roundCapacity(int64_t capacity) {
+    if (capacity > std::numeric_limits<int64_t>::max() - 63) {
+      return arrow::Status::OutOfMemory("capacity too large");
+    }
+    return arrow::bit_util::RoundUpToMultipleOf64(capacity);
+  }
+  ArrowMemoryPool* const pool_;
+  const int64_t alignment_;
+};
+} // namespace
+
+void setArrowMemoryManagerReuseEnabled(bool enabled) {
+  memoryManagerReuseEnabled.store(enabled, std::memory_order_relaxed);
+}
+
+std::shared_ptr<arrow::MemoryManager> ArrowMemoryPool::cachedMemoryManager() {
+  std::call_once(memoryManagerOnce_, [&]() { memoryManager_ = arrow::CPUDevice::memory_manager(this); });
+  return memoryManager_;
+}
+
+arrow::Result<std::unique_ptr<arrow::ResizableBuffer>>
+allocateResizableBuffer(int64_t size, arrow::MemoryPool* pool, int64_t alignment) {
+  if (memoryManagerReuseEnabled.load(std::memory_order_relaxed)) {
+    if (auto* glutenPool = dynamic_cast<ArrowMemoryPool*>(pool)) {
+      auto buffer = std::make_unique<GlutenPoolBuffer>(glutenPool->cachedMemoryManager(), glutenPool, alignment);
+      ARROW_RETURN_NOT_OK(buffer->Resize(size));
+      buffer->ZeroPadding();
+      return std::unique_ptr<arrow::ResizableBuffer>(std::move(buffer));
+    }
+  }
+  return arrow::AllocateResizableBuffer(size, alignment, pool);
+}
 
 arrow::Status ArrowMemoryPool::Allocate(int64_t size, int64_t alignment, uint8_t** out) {
   if (!allocator_->allocateAligned(alignment, size, reinterpret_cast<void**>(out))) {
