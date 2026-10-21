@@ -53,6 +53,7 @@ object VeloxRuleApi {
    */
   private def injectSpark(injector: SparkInjector): Unit = {
     // Inject the regular Spark rules directly.
+    injector.injectOptimizerRule(CascadingRuntimeBloomFilter.install)
     injector.injectQueryStagePrepRule(ReuseFilteredFinalAggregate.apply)
     injector.injectOptimizerRule(CollectRewriteRule.apply)
     injector.injectOptimizerRule(HLLRewriteRule.apply)

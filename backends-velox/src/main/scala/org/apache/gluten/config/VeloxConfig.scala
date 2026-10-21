@@ -33,6 +33,11 @@ class VeloxConfig(conf: SQLConf) extends GlutenConfig(conf) {
 
   def reuseFilteredFinalAggregateEnabled: Boolean = getConf(REUSE_FILTERED_FINAL_AGGREGATE_ENABLED)
 
+  def runtimeBloomCascadeEnabled: Boolean = getConf(RUNTIME_BLOOM_CASCADE_ENABLED)
+  def runtimeBloomCascadeMaxCreationKeyBytes: Long =
+    getConf(RUNTIME_BLOOM_CASCADE_MAX_CREATION_KEY_BYTES)
+  def runtimeBloomCascadeMaxFilters: Int = getConf(RUNTIME_BLOOM_CASCADE_MAX_FILTERS)
+
   def veloxSpillFileSystem: String = getConf(COLUMNAR_VELOX_SPILL_FILE_SYSTEM)
 
   def veloxResizeBatchesShuffleInput: Boolean =
@@ -190,6 +195,21 @@ object VeloxConfig extends ConfigRegistry {
       .doc("Materialize repeated deterministic key-only final aggregation and HAVING results for normal Spark exchange reuse. Preserves partitioning and uses ordinary shuffle budgets. A weak HAVING filter may add significant shuffle traffic; disabled by default.")
       .booleanConf
       .createWithDefault(false)
+
+  val RUNTIME_BLOOM_CASCADE_ENABLED =
+    buildConf("spark.gluten.sql.columnar.backend.velox.runtimeBloom.cascade.enabled")
+      .doc("Build bounded extra runtime Bloom filters from dimensions already selected by stock runtime filters. Int/long inner join keys only; disabled by default.")
+      .booleanConf.createWithDefault(false)
+  val RUNTIME_BLOOM_CASCADE_MAX_CREATION_KEY_BYTES =
+    buildConf("spark.gluten.sql.columnar.backend.velox.runtimeBloom.cascade.maxCreationKeyBytes")
+      .doc("Maximum estimated projected-key bytes for a cascading filter creation scan. Existing Spark Bloom state memory limits remain in force.")
+      .longConf.checkValue(_ > 0, "Must be positive").createWithDefault(268435456L)
+  val RUNTIME_BLOOM_CASCADE_MAX_FILTERS =
+    buildConf("spark.gluten.sql.columnar.backend.velox.runtimeBloom.cascade.maxFilters")
+      .doc("Maximum additional filters in a single cascade wave per query, between zero and ten.")
+      .intConf.checkValue(
+        v => v >= 0 && v <= 10,
+        "Must be between zero and ten").createWithDefault(2)
 
   val ROW_CONTAINER_BATCH_STRING_EXTRACTION_ENABLED =
     buildStaticConf(
