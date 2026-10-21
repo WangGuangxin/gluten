@@ -53,6 +53,7 @@ object VeloxRuleApi {
    */
   private def injectSpark(injector: SparkInjector): Unit = {
     // Inject the regular Spark rules directly.
+    injector.injectQueryStagePrepRule(ReuseFilteredFinalAggregate.apply)
     injector.injectOptimizerRule(CollectRewriteRule.apply)
     injector.injectOptimizerRule(HLLRewriteRule.apply)
     injector.injectOptimizerRule(CollapseGetJsonObjectExpressionRule.apply)
@@ -79,6 +80,8 @@ object VeloxRuleApi {
    * columnar query planning.
    */
   private def injectLegacy(injector: LegacyInjector): Unit = {
+    injector.injectPre(c => ReuseFilteredFinalAggregate(c.session))
+
     // Registered at injectPre rather than injectPreTransform so the rewrite is baked into the
     // plan that ExpandFallbackPolicy reverts to when it promotes a stage fallback to a
     // whole-stage fallback (GLUTEN-12013). A rewrite applied at injectPreTransform is stripped

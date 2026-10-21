@@ -31,6 +31,8 @@ import java.util.concurrent.TimeUnit
 class VeloxConfig(conf: SQLConf) extends GlutenConfig(conf) {
   import VeloxConfig._
 
+  def reuseFilteredFinalAggregateEnabled: Boolean = getConf(REUSE_FILTERED_FINAL_AGGREGATE_ENABLED)
+
   def veloxSpillFileSystem: String = getConf(COLUMNAR_VELOX_SPILL_FILE_SYSTEM)
 
   def veloxResizeBatchesShuffleInput: Boolean =
@@ -182,6 +184,12 @@ object VeloxConfig extends ConfigRegistry {
       .intConf
       .checkValue(v => v >= 0 && v <= 32, "Must be between0and32")
       .createWithDefault(0)
+
+  val REUSE_FILTERED_FINAL_AGGREGATE_ENABLED =
+    buildConf("spark.gluten.sql.columnar.backend.velox.reuseFilteredFinalAggregate.enabled")
+      .doc("Materialize repeated deterministic key-only final aggregation and HAVING results for normal Spark exchange reuse. Preserves partitioning and uses ordinary shuffle budgets. A weak HAVING filter may add significant shuffle traffic; disabled by default.")
+      .booleanConf
+      .createWithDefault(false)
 
   val ROW_CONTAINER_BATCH_STRING_EXTRACTION_ENABLED =
     buildStaticConf(
