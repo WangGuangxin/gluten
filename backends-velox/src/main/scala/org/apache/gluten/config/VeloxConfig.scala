@@ -194,6 +194,12 @@ object VeloxConfig extends ConfigRegistry {
       .booleanConf
       .createWithDefault(false)
 
+  val HASH_JOIN_FIXED_WIDTH_OUTPUT_ENABLED =
+    buildStaticConf("spark.gluten.sql.columnar.backend.velox.hashJoin.fixedWidthOutput.enabled")
+      .doc("Skip per-hit byte accounting for row-limited fixed-width join output. Set before Spark starts.")
+      .booleanConf
+      .createWithDefault(false)
+
   val HASH_JOIN_NUM_PARALLEL_CHAINS =
     buildConf("spark.gluten.sql.columnar.backend.velox.hashJoin.numParallelChains")
       .doc("Number of interleaved duplicate-key join chains. The default preserves eight chains.")

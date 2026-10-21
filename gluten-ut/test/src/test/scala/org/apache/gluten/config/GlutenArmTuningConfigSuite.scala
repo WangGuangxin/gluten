@@ -123,6 +123,18 @@ class GlutenArmTuningConfigSuite extends GlutenQueryTest with SharedSparkSession
     }
   }
 
+  test("fixed-width join output reaches application-static native initialization") {
+    if (BackendsApiManager.getBackendName != "velox") {
+      cancel("Fixed-width join output is specific to the Velox backend")
+    }
+    val key = "spark.gluten.sql.columnar.backend.velox.hashJoin.fixedWidthOutput.enabled"
+    Seq("false", "true").foreach {
+      enabled =>
+        assert(GlutenConfig.getNativeBackendConf("velox", Map(key -> enabled)).get(key) == enabled)
+        assert(!GlutenConfig.getNativeSessionConf("velox", Map(key -> enabled)).contains(key))
+    }
+  }
+
   test("ARM tuning values reach native session configuration") {
     if (BackendsApiManager.getBackendName != "velox") {
       cancel("ARM tuning is specific to the Velox backend")
