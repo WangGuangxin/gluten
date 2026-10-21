@@ -228,6 +228,12 @@ class GlutenArmTuningConfigSuite extends GlutenQueryTest with SharedSparkSession
       (prefix + "aggregation.adaptivePartialMemory.maxBytes") -> "67108864")
     val native = GlutenConfig.getNativeSessionConf("velox", dynamic)
     dynamic.foreach { case (key, value) => assert(native.get(key).contains(value)) }
+    val key = prefix + "rowContainer.stringExtractionPrefetch.enabled"
+    Seq("false", "true").foreach {
+      value =>
+        assert(GlutenConfig.getNativeBackendConf("velox", Map(key -> value)).get(key) == value)
+        assert(!GlutenConfig.getNativeSessionConf("velox", Map(key -> value)).contains(key))
+    }
   }
 
 }

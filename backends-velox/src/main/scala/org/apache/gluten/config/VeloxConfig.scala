@@ -182,6 +182,13 @@ object VeloxConfig extends ConfigRegistry {
       .booleanConf
       .createWithDefault(false)
 
+  val ROW_CONTAINER_STRING_EXTRACTION_PREFETCH_ENABLED =
+    buildStaticConf(
+      "spark.gluten.sql.columnar.backend.velox.rowContainer.stringExtractionPrefetch.enabled")
+      .doc("Prefetch row metadata and string payload headers in batched extraction. Set before Spark starts.")
+      .booleanConf
+      .createWithDefault(false)
+
   val HASH_SHUFFLE_SVE_GATHER_ENABLED =
     buildConf("spark.gluten.sql.columnar.backend.velox.hashShuffle.sveGather.enabled")
       .doc("Use native SVE gather for fixed-width hash shuffle columns on SVE builds.")

@@ -71,6 +71,7 @@
 DECLARE_bool(velox_exception_user_stacktrace_enabled);
 DECLARE_bool(velox_row_container_batch_string_extraction_enabled);
 DECLARE_bool(velox_row_container_string_equality_enabled);
+DECLARE_bool(velox_row_container_string_extraction_prefetch_enabled);
 DECLARE_bool(velox_hash_join_fixed_width_output_enabled);
 DECLARE_bool(velox_hash_join_head_chain_drain_enabled);
 DECLARE_bool(velox_hash_join_compact_chains_enabled);
@@ -182,6 +183,8 @@ void VeloxBackend::init(
   // Application-static: never mutate this flag from a task/query config.
   FLAGS_velox_row_container_batch_string_extraction_enabled =
       backendConf_->get<bool>(kRowContainerBatchStringExtractionEnabled, false);
+  FLAGS_velox_row_container_string_extraction_prefetch_enabled = backendConf_->get<bool>(
+      "spark.gluten.sql.columnar.backend.velox.rowContainer.stringExtractionPrefetch.enabled", false);
   FLAGS_velox_row_container_string_equality_enabled =
       backendConf_->get<bool>(kRowContainerStringEqualityEnabled, false);
 
