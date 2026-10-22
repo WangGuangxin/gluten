@@ -31,7 +31,7 @@ import org.apache.spark.task.TaskResources
 
 import com.github.benmanes.caffeine.cache.{Cache, Caffeine, RemovalCause, RemovalListener}
 
-import java.util.concurrent.TimeUnit
+import java.util.concurrent.{ForkJoinPool, TimeUnit}
 
 case class BroadcastHashTable(
     pointer: Long,
@@ -53,6 +53,8 @@ object VeloxBroadcastBuildSideCache
   extends Logging
   with RemovalListener[String, BroadcastHashTable] {
 
+  private val cleanupExecutor = new NativeCacheCleanupExecutor(ForkJoinPool.commonPool())
+
   private lazy val expiredTime = SparkEnv.get.conf.getLong(
     VeloxBackendSettings.GLUTEN_VELOX_BROADCAST_CACHE_EXPIRED_TIME,
     VeloxBackendSettings.GLUTEN_VELOX_BROADCAST_CACHE_EXPIRED_TIME_DEFAULT
@@ -62,6 +64,7 @@ object VeloxBroadcastBuildSideCache
   // key: hashtable id, value is hashtable backend pointer(long to string).
   private val buildSideRelationCache: Cache[String, BroadcastHashTable] =
     Caffeine.newBuilder
+      .executor(cleanupExecutor)
       .expireAfterAccess(expiredTime, TimeUnit.SECONDS)
       .removalListener(this)
       .build[String, BroadcastHashTable]()
@@ -69,6 +72,7 @@ object VeloxBroadcastBuildSideCache
   // Cache for driver-side serialized hash tables to avoid rebuilding for reuse exchange
   private val driverSerializedCache: Cache[String, SerializedBroadcastHashTable] =
     Caffeine.newBuilder
+      .executor(cleanupExecutor)
       .expireAfterAccess(expiredTime, TimeUnit.SECONDS)
       .removalListener(
         new RemovalListener[String, SerializedBroadcastHashTable] {
@@ -233,6 +237,11 @@ object VeloxBroadcastBuildSideCache
   def cleanAll(): Unit = {
     buildSideRelationCache.invalidateAll()
     driverSerializedCache.invalidateAll()
+    buildSideRelationCache.cleanUp()
+    driverSerializedCache.cleanUp()
+    // Caffeine removal listeners run asynchronously. Release cached native hash
+    // tables and serialized buffers before the native backend destroys their pools.
+    cleanupExecutor.awaitPendingTasks()
   }
 
   override def onRemoval(
