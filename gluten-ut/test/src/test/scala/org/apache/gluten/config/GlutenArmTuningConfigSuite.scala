@@ -38,6 +38,20 @@ class GlutenArmTuningConfigSuite extends GlutenQueryTest with SharedSparkSession
     }
   }
 
+  test("ARM SVE bit unpack is opt-in and application-static") {
+    if (BackendsApiManager.getBackendName != "velox") {
+      cancel("ARM SVE bit unpack is specific to the Velox backend")
+    }
+    val config = VeloxConfig.ARM_SVE_BIT_UNPACK_ENABLED
+    val key = "spark.gluten.sql.columnar.backend.velox.arm.sveBitUnpack.enabled"
+    assert(!config.defaultValue.get)
+    Seq("false", "true").foreach {
+      enabled =>
+        assert(GlutenConfig.getNativeBackendConf("velox", Map(key -> enabled)).get(key) == enabled)
+        assert(!GlutenConfig.getNativeSessionConf("velox", Map(key -> enabled)).contains(key))
+    }
+  }
+
   test("ARM tuning values reach native session configuration") {
     if (BackendsApiManager.getBackendName != "velox") {
       cancel("ARM tuning is specific to the Velox backend")

@@ -149,6 +149,13 @@ object VeloxConfig extends ConfigRegistry {
       .booleanConf
       .createWithDefault(false)
 
+  val ARM_SVE_BIT_UNPACK_ENABLED =
+    buildStaticConf("spark.gluten.sql.columnar.backend.velox.arm.sveBitUnpack.enabled")
+      .doc("Decode selected bit-packed integer values with predicated ARM SVE. " +
+        "Requires an SVE-enabled native build. Set before Spark starts.")
+      .booleanConf
+      .createWithDefault(false)
+
   val HASH_JOIN_NUM_PARALLEL_CHAINS =
     buildConf("spark.gluten.sql.columnar.backend.velox.hashJoin.numParallelChains")
       .doc("Number of interleaved duplicate-key join chains. The default preserves eight chains.")
