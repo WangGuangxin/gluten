@@ -253,6 +253,13 @@ object VeloxConfig extends ConfigRegistry {
       .booleanConf
       .createWithDefault(true)
 
+  val ARM_SVE_GATHER_ENABLED =
+    buildStaticConf("spark.gluten.sql.columnar.backend.velox.arm.sveGather.enabled")
+      .doc("Use predicated ARM SVE gathers with the existing NEON vector ABI. " +
+        "Requires an SVE-enabled native build. Set before Spark starts.")
+      .booleanConf
+      .createWithDefault(false)
+
   val ROW_CONTAINER_STRING_EQUALITY_ENABLED =
     buildStaticConf("spark.gluten.sql.columnar.backend.velox.rowContainer.stringEquality.enabled")
       .doc("Use equality-only string key comparison. Set before Spark starts.")
