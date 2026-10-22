@@ -42,6 +42,7 @@
 #include "compute/VeloxRuntime.h"
 #include "config/VeloxConfig.h"
 #include "memory/ArrowMemoryPool.h"
+#include "utils/ByteShuffle.h"
 #include "utils/Compression.h"
 #ifdef ENABLE_S3
 #include "filesystem/GlutenS3FileSystem.h"
@@ -221,6 +222,12 @@ void VeloxBackend::init(
       "spark.gluten.sql.columnar.backend.velox.shuffle."
       "arrowMemoryManagerReuse.enabled",
       false));
+  setByteShuffleLz4Enabled(
+      backendConf_->get<bool>("spark.gluten.sql.columnar.backend.velox.shuffle.byteShuffleLz4.enabled", false));
+  setArmNeonByteShuffleEnabled(
+      backendConf_->get<bool>("spark.gluten.sql.columnar.backend.velox.arm.neonByteShuffle.enabled", false));
+  setByteShuffleLz4LogUsage(
+      backendConf_->get<bool>("spark.gluten.sql.columnar.backend.velox.shuffle.byteShuffleLz4.logUsage", false));
   setLz4FrameFastCompressionLevel(
       backendConf_->get<int32_t>("spark.gluten.sql.columnar.backend.velox.shuffle.lz4Frame.fastCompressionLevel", 0));
   setLz4FrameContextReuseEnabled(backendConf_->get<bool>(

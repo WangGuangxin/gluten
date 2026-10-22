@@ -139,6 +139,48 @@ class GlutenArmTuningConfigSuite extends GlutenQueryTest with SharedSparkSession
     }
   }
 
+  test("shuffle byte LZ4 is opt-in and application-static") {
+    if (BackendsApiManager.getBackendName != "velox") {
+      cancel("shuffle byte LZ4 is specific to the Velox backend")
+    }
+    val config = VeloxConfig.SHUFFLE_BYTE_LZ4_ENABLED
+    val key = "spark.gluten.sql.columnar.backend.velox.shuffle.byteShuffleLz4.enabled"
+    assert(!config.defaultValue.get)
+    Seq("false", "true").foreach {
+      enabled =>
+        assert(GlutenConfig.getNativeBackendConf("velox", Map(key -> enabled)).get(key) == enabled)
+        assert(!GlutenConfig.getNativeSessionConf("velox", Map(key -> enabled)).contains(key))
+    }
+  }
+
+  test("ARM NEON byte shuffle is opt-in and application-static") {
+    if (BackendsApiManager.getBackendName != "velox") {
+      cancel("ARM NEON byte shuffle is specific to the Velox backend")
+    }
+    val config = VeloxConfig.ARM_NEON_BYTE_SHUFFLE_ENABLED
+    val key = "spark.gluten.sql.columnar.backend.velox.arm.neonByteShuffle.enabled"
+    assert(!config.defaultValue.get)
+    Seq("false", "true").foreach {
+      enabled =>
+        assert(GlutenConfig.getNativeBackendConf("velox", Map(key -> enabled)).get(key) == enabled)
+        assert(!GlutenConfig.getNativeSessionConf("velox", Map(key -> enabled)).contains(key))
+    }
+  }
+
+  test("shuffle byte LZ4 usage logging is opt-in and application-static") {
+    if (BackendsApiManager.getBackendName != "velox") {
+      cancel("shuffle byte LZ4 usage logging is specific to the Velox backend")
+    }
+    val config = VeloxConfig.SHUFFLE_BYTE_LZ4_LOG_USAGE
+    val key = "spark.gluten.sql.columnar.backend.velox.shuffle.byteShuffleLz4.logUsage"
+    assert(!config.defaultValue.get)
+    Seq("false", "true").foreach {
+      enabled =>
+        assert(GlutenConfig.getNativeBackendConf("velox", Map(key -> enabled)).get(key) == enabled)
+        assert(!GlutenConfig.getNativeSessionConf("velox", Map(key -> enabled)).contains(key))
+    }
+  }
+
   test("ARM SVE hash tail is opt-in and application-static") {
     if (BackendsApiManager.getBackendName != "velox") {
       cancel("ARM SVE hash tail is specific to the Velox backend")
