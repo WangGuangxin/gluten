@@ -260,6 +260,13 @@ object VeloxConfig extends ConfigRegistry {
       .booleanConf
       .createWithDefault(false)
 
+  val ARM_SVE_HASH_TAIL_ENABLED =
+    buildStaticConf("spark.gluten.sql.columnar.backend.velox.arm.sveHashTail.enabled")
+      .doc("Read bounded CRC32C string-hash tails with predicated ARM SVE loads. " +
+        "Preserves hash values and falls back on other builds. Set before Spark starts.")
+      .booleanConf
+      .createWithDefault(false)
+
   val ARM_SVE_BIT_DEPOSIT_ENABLED =
     buildStaticConf("spark.gluten.sql.columnar.backend.velox.arm.sveBitDeposit.enabled")
       .doc("Decode contiguous selected bit-packed integers with ARM SVE2 BitPerm. " +
