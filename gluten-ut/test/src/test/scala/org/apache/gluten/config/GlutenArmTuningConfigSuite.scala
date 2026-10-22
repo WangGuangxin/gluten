@@ -22,6 +22,22 @@ import org.apache.spark.sql.GlutenQueryTest
 import org.apache.spark.sql.test.SharedSparkSession
 
 class GlutenArmTuningConfigSuite extends GlutenQueryTest with SharedSparkSession {
+  // Register static options before testing forwarding in an isolated suite.
+  private val sveGatherConfig = VeloxConfig.ARM_SVE_GATHER_ENABLED
+
+  test("ARM SVE gather is opt-in and reaches only application-static native initialization") {
+    if (BackendsApiManager.getBackendName != "velox") {
+      cancel("ARM SVE gather is specific to the Velox backend")
+    }
+    val key = "spark.gluten.sql.columnar.backend.velox.arm.sveGather.enabled"
+    assert(!sveGatherConfig.defaultValue.get)
+    Seq("false", "true").foreach {
+      enabled =>
+        assert(GlutenConfig.getNativeBackendConf("velox", Map(key -> enabled)).get(key) == enabled)
+        assert(!GlutenConfig.getNativeSessionConf("velox", Map(key -> enabled)).contains(key))
+    }
+  }
+
   test("ARM tuning values reach native session configuration") {
     if (BackendsApiManager.getBackendName != "velox") {
       cancel("ARM tuning is specific to the Velox backend")

@@ -67,6 +67,7 @@
 #include "velox/serializers/PrestoSerializer.h"
 
 DECLARE_bool(velox_exception_user_stacktrace_enabled);
+DECLARE_bool(velox_arm_sve_gather_enabled);
 DECLARE_int32(velox_memory_num_shared_leaf_pools);
 DECLARE_bool(velox_memory_use_hugepages);
 DECLARE_bool(velox_ssd_odirect);
@@ -170,6 +171,10 @@ void VeloxBackend::init(
   // Avoid creating too many shared leaf pools.
   FLAGS_velox_memory_num_shared_leaf_pools = 0;
 
+
+  // Application-static: all worker tasks observe a fixed gather implementation.
+  FLAGS_velox_arm_sve_gather_enabled =
+      backendConf_->get<bool>("spark.gluten.sql.columnar.backend.velox.arm.sveGather.enabled", false);
   // Set velox_exception_user_stacktrace_enabled.
   FLAGS_velox_exception_user_stacktrace_enabled =
       backendConf_->get<bool>(kEnableUserExceptionStacktrace, kEnableUserExceptionStacktraceDefault);

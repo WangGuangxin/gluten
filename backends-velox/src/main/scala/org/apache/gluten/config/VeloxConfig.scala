@@ -142,6 +142,13 @@ object VeloxConfig extends ConfigRegistry {
       .booleanConf
       .createWithDefault(true)
 
+  val ARM_SVE_GATHER_ENABLED =
+    buildStaticConf("spark.gluten.sql.columnar.backend.velox.arm.sveGather.enabled")
+      .doc("Use predicated ARM SVE gathers with the existing NEON vector ABI. " +
+        "Requires an SVE-enabled native build. Set before Spark starts.")
+      .booleanConf
+      .createWithDefault(false)
+
   val HASH_JOIN_NUM_PARALLEL_CHAINS =
     buildConf("spark.gluten.sql.columnar.backend.velox.hashJoin.numParallelChains")
       .doc("Number of interleaved duplicate-key join chains. The default preserves eight chains.")
