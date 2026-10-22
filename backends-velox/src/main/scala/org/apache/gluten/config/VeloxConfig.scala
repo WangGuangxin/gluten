@@ -260,6 +260,13 @@ object VeloxConfig extends ConfigRegistry {
       .booleanConf
       .createWithDefault(false)
 
+  val ARM_SVE_BIT_UNPACK_ENABLED =
+    buildStaticConf("spark.gluten.sql.columnar.backend.velox.arm.sveBitUnpack.enabled")
+      .doc("Decode selected bit-packed integer values with predicated ARM SVE. " +
+        "Requires an SVE-enabled native build. Set before Spark starts.")
+      .booleanConf
+      .createWithDefault(false)
+
   val ROW_CONTAINER_STRING_EQUALITY_ENABLED =
     buildStaticConf("spark.gluten.sql.columnar.backend.velox.rowContainer.stringEquality.enabled")
       .doc("Use equality-only string key comparison. Set before Spark starts.")
