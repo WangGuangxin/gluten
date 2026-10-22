@@ -69,6 +69,7 @@
 DECLARE_bool(velox_exception_user_stacktrace_enabled);
 DECLARE_bool(velox_arm_sve_gather_enabled);
 DECLARE_bool(velox_arm_sve_bit_unpack_enabled);
+DECLARE_bool(velox_arm_sve_bit_deposit_enabled);
 DECLARE_int32(velox_memory_num_shared_leaf_pools);
 DECLARE_bool(velox_memory_use_hugepages);
 DECLARE_bool(velox_ssd_odirect);
@@ -178,6 +179,8 @@ void VeloxBackend::init(
       backendConf_->get<bool>("spark.gluten.sql.columnar.backend.velox.arm.sveGather.enabled", false);
   FLAGS_velox_arm_sve_bit_unpack_enabled =
       backendConf_->get<bool>("spark.gluten.sql.columnar.backend.velox.arm.sveBitUnpack.enabled", false);
+  FLAGS_velox_arm_sve_bit_deposit_enabled =
+      backendConf_->get<bool>("spark.gluten.sql.columnar.backend.velox.arm.sveBitDeposit.enabled", false);
   // Set velox_exception_user_stacktrace_enabled.
   FLAGS_velox_exception_user_stacktrace_enabled =
       backendConf_->get<bool>(kEnableUserExceptionStacktrace, kEnableUserExceptionStacktraceDefault);

@@ -149,6 +149,13 @@ object VeloxConfig extends ConfigRegistry {
       .booleanConf
       .createWithDefault(false)
 
+  val ARM_SVE_BIT_DEPOSIT_ENABLED =
+    buildStaticConf("spark.gluten.sql.columnar.backend.velox.arm.sveBitDeposit.enabled")
+      .doc("Decode contiguous selected bit-packed integers with ARM SVE2 BitPerm. " +
+        "Requires a compatible native build and CPU. Set before Spark starts.")
+      .booleanConf
+      .createWithDefault(false)
+
   val ARM_SVE_BIT_UNPACK_ENABLED =
     buildStaticConf("spark.gluten.sql.columnar.backend.velox.arm.sveBitUnpack.enabled")
       .doc("Decode selected bit-packed integer values with predicated ARM SVE. " +
