@@ -22,13 +22,29 @@
 #include <iostream>
 #include <numeric>
 
+#include <gflags/gflags.h>
+#include <glog/logging.h>
 #include "shuffle/Options.h"
 #include "shuffle/Utils.h"
+#include "utils/ByteShuffle.h"
 #include "utils/Exception.h"
 #include "utils/Timer.h"
 #include "utils/tac/TypeAwareCompressCodec.h"
 
+DEFINE_bool(gluten_shuffle_byte_lz4_enabled, false, "Opt in to selective lossless byte-plane LZ4 shuffle frames");
+DEFINE_bool(gluten_arm_neon_byte_shuffle_enabled, false, "Use ARM NEON for byte-plane shuffle transforms");
+DEFINE_bool(gluten_shuffle_byte_lz4_log_usage, false, "Log one byte-plane encode/decode per thread for diagnostics");
+
 namespace gluten {
+void setByteShuffleLz4Enabled(bool enabled) {
+  FLAGS_gluten_shuffle_byte_lz4_enabled = enabled;
+}
+void setArmNeonByteShuffleEnabled(bool enabled) {
+  FLAGS_gluten_arm_neon_byte_shuffle_enabled = enabled;
+}
+void setByteShuffleLz4LogUsage(bool enabled) {
+  FLAGS_gluten_shuffle_byte_lz4_log_usage = enabled;
+}
 namespace {
 
 static const Payload::Type kCompressedType = gluten::BlockPayload::kCompressed;
@@ -38,6 +54,7 @@ static constexpr int64_t kZeroLengthBuffer = 0;
 static constexpr int64_t kNullBuffer = -1;
 static constexpr int64_t kUncompressedBuffer = -2;
 static constexpr int64_t kTypeAwareBuffer = -3;
+static constexpr int64_t kByteShuffleBuffer = -4;
 
 template <typename T>
 void write(uint8_t** dst, T data) {
@@ -52,6 +69,19 @@ T* advance(uint8_t** dst) {
   return ptr;
 }
 
+arrow::Status readExactly(arrow::io::InputStream* stream, int64_t size, void* output) {
+  auto* next = static_cast<uint8_t*>(output);
+  while (size > 0) {
+    ARROW_ASSIGN_OR_RAISE(auto count, stream->Read(size, next));
+    if (count <= 0 || count > size) {
+      return arrow::Status::IOError("Truncated shuffle buffer");
+    }
+    size -= count;
+    next += count;
+  }
+  return arrow::Status::OK();
+}
+
 arrow::Result<uint8_t> readPayloadType(arrow::io::InputStream* is) {
   uint8_t type;
   ARROW_ASSIGN_OR_RAISE(auto bytes, is->Read(sizeof(Payload::Type), &type));
@@ -63,7 +93,8 @@ arrow::Result<int64_t> compressBuffer(
     const std::shared_ptr<arrow::Buffer> buffer,
     uint8_t* output,
     int64_t outputLength,
-    arrow::util::Codec* codec) {
+    arrow::util::Codec* codec,
+    arrow::MemoryPool* pool) {
   auto outputPtr = &output;
   if (!buffer) {
     write<int64_t>(outputPtr, kNullBuffer);
@@ -73,11 +104,46 @@ arrow::Result<int64_t> compressBuffer(
     write<int64_t>(outputPtr, kZeroLengthBuffer);
     return sizeof(int64_t);
   }
+  ARROW_RETURN_IF(outputLength < 16, arrow::Status::Invalid("Shuffle compression header capacity"));
+  if (FLAGS_gluten_shuffle_byte_lz4_enabled && codec->compression_type() == arrow::Compression::LZ4_FRAME &&
+      byte_shuffle::eligible(buffer->data(), buffer->size())) {
+    ARROW_RETURN_IF(outputLength < 32, arrow::Status::Invalid("Byte-plane shuffle header capacity"));
+    ARROW_ASSIGN_OR_RAISE(auto transformed, gluten::allocateResizableBuffer(buffer->size(), pool));
+    const bool neon = FLAGS_gluten_arm_neon_byte_shuffle_enabled;
+    ARROW_RETURN_IF(
+        !byte_shuffle::reorder<false>(buffer->data(), transformed->mutable_data(), buffer->size() / 8, 8, neon),
+        arrow::Status::Invalid("Invalid bounded byte-plane input"));
+    ARROW_ASSIGN_OR_RAISE(
+        auto written, codec->Compress(buffer->size(), transformed->data(), outputLength - 32, output + 32));
+    ARROW_RETURN_IF(
+        written < 0 || written > outputLength - 32, arrow::Status::Invalid("Invalid byte-plane encoded size"));
+    if (written + 16 >= buffer->size()) {
+      ARROW_RETURN_IF(outputLength - 16 < buffer->size(), arrow::Status::Invalid("Raw shuffle output capacity"));
+      write<int64_t>(outputPtr, kUncompressedBuffer);
+      write<int64_t>(outputPtr, buffer->size());
+      memcpy(*outputPtr, buffer->data(), buffer->size());
+      return 16 + buffer->size();
+    }
+    write<int64_t>(outputPtr, kByteShuffleBuffer);
+    write<int64_t>(outputPtr, buffer->size());
+    write<int64_t>(outputPtr, written);
+    write<int64_t>(outputPtr, 8);
+    if (FLAGS_gluten_shuffle_byte_lz4_log_usage) {
+      static thread_local bool emitted = false;
+      if (!emitted) {
+        emitted = true;
+        LOG(INFO) << "GLUTEN_BYTE_SHUFFLE_LZ4_ENCODE input_bytes=" << buffer->size() << " compressed_bytes=" << written
+                  << " kernel=" << (neon && GLUTEN_BYTE_SHUFFLE_NEON_AVAILABLE ? "neon" : "cpp");
+      }
+    }
+    return 32 + written;
+  }
   static const int64_t kCompressedBufferHeaderLength = 2 * sizeof(int64_t);
   auto* compressedLengthPtr = advance<int64_t>(outputPtr);
   write(outputPtr, static_cast<int64_t>(buffer->size()));
   ARROW_ASSIGN_OR_RAISE(
-      auto compressedLength, codec->Compress(buffer->size(), buffer->data(), outputLength, *outputPtr));
+      auto compressedLength,
+      codec->Compress(buffer->size(), buffer->data(), outputLength - kCompressedBufferHeaderLength, *outputPtr));
   if (compressedLength >= buffer->size()) {
     // Write uncompressed buffer.
     memcpy(*outputPtr, buffer->data(), buffer->size());
@@ -152,10 +218,15 @@ arrow::Status compressAndFlush(
   }
   ScopedTimer timer(&compressTime);
   auto maxCompressedLength = codec->MaxCompressedLen(buffer->size(), buffer->data());
+  const int64_t extraHeader =
+      FLAGS_gluten_shuffle_byte_lz4_enabled && codec->compression_type() == arrow::Compression::LZ4_FRAME ? 16 : 0;
   ARROW_ASSIGN_OR_RAISE(
       auto compressed, arrow::AllocateResizableBuffer(sizeof(int64_t) * 2 + maxCompressedLength, pool));
+      auto compressed, gluten::allocateResizableBuffer(sizeof(int64_t) * 2 + extraHeader + maxCompressedLength, pool));
   auto output = compressed->mutable_data();
-  ARROW_ASSIGN_OR_RAISE(auto compressedSize, compressBuffer(buffer, output, maxCompressedLength, codec));
+  ARROW_ASSIGN_OR_RAISE(
+      auto compressedSize,
+      compressBuffer(buffer, output, sizeof(int64_t) * 2 + extraHeader + maxCompressedLength, codec, pool));
 
   timer.switchTo(&writeTime);
   RETURN_NOT_OK(outputStream->Write(compressed->data(), compressedSize));
@@ -183,7 +254,7 @@ arrow::Result<std::shared_ptr<arrow::Buffer>> readCompressedBuffer(
     int64_t& decompressTime) {
   ScopedTimer timer(&deserializeTime);
   int64_t compressedLength;
-  RETURN_NOT_OK(inputStream->Read(sizeof(int64_t), &compressedLength));
+  RETURN_NOT_OK(readExactly(inputStream, sizeof(int64_t), &compressedLength));
   if (compressedLength == kNullBuffer) {
     return nullptr;
   }
@@ -192,8 +263,40 @@ arrow::Result<std::shared_ptr<arrow::Buffer>> readCompressedBuffer(
   }
 
   int64_t uncompressedLength;
-  RETURN_NOT_OK(inputStream->Read(sizeof(int64_t), &uncompressedLength));
+  RETURN_NOT_OK(readExactly(inputStream, sizeof(int64_t), &uncompressedLength));
 
+  ARROW_RETURN_IF(uncompressedLength < 0, arrow::Status::Invalid("Negative shuffle original length"));
+  if (compressedLength == kByteShuffleBuffer) {
+    int64_t actualCompressed, width;
+    RETURN_NOT_OK(readExactly(inputStream, sizeof(int64_t), &actualCompressed));
+    RETURN_NOT_OK(readExactly(inputStream, sizeof(int64_t), &width));
+    ARROW_RETURN_IF(
+        !codec || codec->compression_type() != arrow::Compression::LZ4_FRAME || width != 8 || uncompressedLength < 32 ||
+            uncompressedLength % 8 != 0 || actualCompressed <= 0 || actualCompressed >= uncompressedLength - 16,
+        arrow::Status::Invalid("Invalid byte-plane shuffle metadata"));
+    ARROW_ASSIGN_OR_RAISE(auto compressed, gluten::allocateResizableBuffer(actualCompressed, pool));
+    RETURN_NOT_OK(readExactly(inputStream, actualCompressed, compressed->mutable_data()));
+    timer.switchTo(&decompressTime);
+    ARROW_ASSIGN_OR_RAISE(auto transformed, gluten::allocateResizableBuffer(uncompressedLength, pool));
+    ARROW_ASSIGN_OR_RAISE(
+        auto count,
+        codec->Decompress(actualCompressed, compressed->data(), uncompressedLength, transformed->mutable_data()));
+    ARROW_RETURN_IF(count != uncompressedLength, arrow::Status::Invalid("Byte-plane decoded length mismatch"));
+    ARROW_ASSIGN_OR_RAISE(auto output, gluten::allocateResizableBuffer(uncompressedLength, pool));
+    const bool neon = FLAGS_gluten_arm_neon_byte_shuffle_enabled;
+    ARROW_RETURN_IF(
+        !byte_shuffle::reorder<true>(transformed->data(), output->mutable_data(), uncompressedLength / 8, 8, neon),
+        arrow::Status::Invalid("Invalid bounded inverse byte-plane transform"));
+    if (FLAGS_gluten_shuffle_byte_lz4_log_usage) {
+      static thread_local bool emitted = false;
+      if (!emitted) {
+        emitted = true;
+        LOG(INFO) << "GLUTEN_BYTE_SHUFFLE_LZ4_DECODE output_bytes=" << uncompressedLength
+                  << " kernel=" << (neon && GLUTEN_BYTE_SHUFFLE_NEON_AVAILABLE ? "neon" : "cpp");
+      }
+    }
+    return output;
+  }
   if (compressedLength == kTypeAwareBuffer) {
     // Type-aware compressed buffer. This marker only appears when compression helped.
     // Wire format: compressedLength (int64) already consumed above as kTypeAwareBuffer,
@@ -217,6 +320,7 @@ arrow::Result<std::shared_ptr<arrow::Buffer>> readCompressedBuffer(
     return uncompressed;
   }
   ARROW_ASSIGN_OR_RAISE(auto compressed, arrow::AllocateResizableBuffer(compressedLength, pool));
+  ARROW_RETURN_IF(compressedLength <= 0, arrow::Status::Invalid("Unknown shuffle buffer marker"));
   RETURN_NOT_OK(inputStream->Read(compressedLength, compressed->mutable_data()));
 
   timer.switchTo(&decompressTime);
@@ -278,7 +382,8 @@ arrow::Result<std::unique_ptr<BlockPayload>> BlockPayload::fromBuffers(
             compressedSize, compressTypeAwareBuffer(std::move(buffers[i]), output, availableLength, typeKind));
       } else {
         // Use standard codec (LZ4/ZSTD) for unsupported types.
-        ARROW_ASSIGN_OR_RAISE(compressedSize, compressBuffer(std::move(buffers[i]), output, availableLength, codec));
+        ARROW_ASSIGN_OR_RAISE(
+            compressedSize, compressBuffer(std::move(buffers[i]), output, availableLength, codec, pool));
       }
       output += compressedSize;
       actualLength += compressedSize;
@@ -423,6 +528,9 @@ int64_t BlockPayload::maxCompressedLength(
         totalCompressedLength += TypeAwareCompressCodec::maxCompressedLen(buffer->size(), typeKind);
         continue;
       }
+    }
+    if (FLAGS_gluten_shuffle_byte_lz4_enabled && codec->compression_type() == arrow::Compression::LZ4_FRAME) {
+      metadataLength += 16;
     }
     // Standard codec: compressed data.
     totalCompressedLength += codec->MaxCompressedLen(buffer->size(), buffer->data());

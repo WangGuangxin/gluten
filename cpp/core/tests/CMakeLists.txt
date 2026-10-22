@@ -18,3 +18,5 @@ add_test_case(object_store_test SOURCES ObjectStoreTest.cc)
 add_test_case(memory_allocator_test SOURCES MemoryAllocatorTest.cc)
 add_test_case(ffor_codec_test SOURCES FForCodecTest.cc)
 add_test_case(print_config_test SOURCES PrintConfigTest.cc)
+
+add_test_case(byte_shuffle_lz4_test SOURCES ByteShuffleLz4Test.cc)

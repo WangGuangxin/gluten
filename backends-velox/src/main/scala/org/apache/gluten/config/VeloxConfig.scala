@@ -170,6 +170,26 @@ object VeloxConfig extends ConfigRegistry {
       .booleanConf
       .createWithDefault(false)
 
+  val SHUFFLE_BYTE_LZ4_ENABLED =
+    buildStaticConf("spark.gluten.sql.columnar.backend.velox.shuffle.byteShuffleLz4.enabled")
+      .doc("Selectively reorder bytes before LZ4 shuffle compression. Requires matching new readers. Set before Spark starts.")
+      .booleanConf
+      .createWithDefault(false)
+
+  val ARM_NEON_BYTE_SHUFFLE_ENABLED =
+    buildStaticConf("spark.gluten.sql.columnar.backend.velox.arm.neonByteShuffle.enabled")
+      .doc(
+        "Use ARM NEON for optional lossless byte-plane shuffle transforms. Set before Spark starts.")
+      .booleanConf
+      .createWithDefault(false)
+
+  val SHUFFLE_BYTE_LZ4_LOG_USAGE =
+    buildStaticConf("spark.gluten.sql.columnar.backend.velox.shuffle.byteShuffleLz4.logUsage")
+      .doc(
+        "Diagnostic only: log one tagged shuffle encode/decode per thread. Set before Spark starts.")
+      .booleanConf
+      .createWithDefault(false)
+
   val HASH_JOIN_NUM_PARALLEL_CHAINS =
     buildConf("spark.gluten.sql.columnar.backend.velox.hashJoin.numParallelChains")
       .doc("Number of interleaved duplicate-key join chains. The default preserves eight chains.")

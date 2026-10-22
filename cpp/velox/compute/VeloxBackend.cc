@@ -41,6 +41,7 @@
 
 #include "compute/VeloxRuntime.h"
 #include "config/VeloxConfig.h"
+#include "utils/ByteShuffle.h"
 #ifdef ENABLE_S3
 #include "filesystem/GlutenS3FileSystem.h"
 #endif
@@ -184,6 +185,12 @@ void VeloxBackend::init(
       backendConf_->get<bool>("spark.gluten.sql.columnar.backend.velox.arm.sveBitDeposit.enabled", false);
   FLAGS_velox_arm_sve_hash_tail_enabled =
       backendConf_->get<bool>("spark.gluten.sql.columnar.backend.velox.arm.sveHashTail.enabled", false);
+  setByteShuffleLz4Enabled(
+      backendConf_->get<bool>("spark.gluten.sql.columnar.backend.velox.shuffle.byteShuffleLz4.enabled", false));
+  setArmNeonByteShuffleEnabled(
+      backendConf_->get<bool>("spark.gluten.sql.columnar.backend.velox.arm.neonByteShuffle.enabled", false));
+  setByteShuffleLz4LogUsage(
+      backendConf_->get<bool>("spark.gluten.sql.columnar.backend.velox.shuffle.byteShuffleLz4.logUsage", false));
   // Set velox_exception_user_stacktrace_enabled.
   FLAGS_velox_exception_user_stacktrace_enabled =
       backendConf_->get<bool>(kEnableUserExceptionStacktrace, kEnableUserExceptionStacktraceDefault);
