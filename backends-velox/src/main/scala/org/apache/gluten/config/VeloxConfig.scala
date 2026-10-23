@@ -47,6 +47,9 @@ class VeloxConfig(conf: SQLConf) extends GlutenConfig(conf) {
   def dimensionBridgeEnabled: Boolean = getConf(DIMENSION_BRIDGE_ENABLED)
   def dimensionBridgeFactMinBytes: Long = getConf(DIMENSION_BRIDGE_FACT_MIN_BYTES)
   def dimensionBridgeDimensionMaxBytes: Long = getConf(DIMENSION_BRIDGE_DIMENSION_MAX_BYTES)
+  def dimensionStringIdsEnabled: Boolean = getConf(DIMENSION_STRING_IDS_ENABLED)
+  def dimensionStringIdsFactMinBytes: Long = getConf(DIMENSION_STRING_IDS_FACT_MIN_BYTES)
+  def dimensionStringIdsDimensionMaxBytes: Long = getConf(DIMENSION_STRING_IDS_DIMENSION_MAX_BYTES)
 
   def veloxSpillFileSystem: String = getConf(COLUMNAR_VELOX_SPILL_FILE_SYSTEM)
 
@@ -259,6 +262,19 @@ object VeloxConfig extends ConfigRegistry {
     buildConf(
       "spark.gluten.sql.columnar.backend.velox.joinReorder.dimensionBridge.dimensionMaxBytes")
       .doc("Maximum scanned bytes for an input to be treated as a bridging dimension.")
+      .longConf.checkValue(_ >= 0, "Must not be negative").createWithDefault(67108864L)
+  val DIMENSION_STRING_IDS_ENABLED =
+    buildConf("spark.gluten.sql.columnar.backend.velox.aggregation.dimensionStringIds.enabled")
+      .doc("Group large aggregations by injective integer identifiers of small-dimension string keys and restore the strings after aggregation. Disabled by default.")
+      .booleanConf.createWithDefault(false)
+  val DIMENSION_STRING_IDS_FACT_MIN_BYTES =
+    buildConf("spark.gluten.sql.columnar.backend.velox.aggregation.dimensionStringIds.factMinBytes")
+      .doc("Minimum scanned bytes below an aggregation before string keys are encoded.")
+      .longConf.checkValue(_ >= 0, "Must not be negative").createWithDefault(68719476736L)
+  val DIMENSION_STRING_IDS_DIMENSION_MAX_BYTES =
+    buildConf(
+      "spark.gluten.sql.columnar.backend.velox.aggregation.dimensionStringIds.dimensionMaxBytes")
+      .doc("Maximum scanned bytes of a dimension whose string keys are encoded.")
       .longConf.checkValue(_ >= 0, "Must not be negative").createWithDefault(67108864L)
 
   val ROW_CONTAINER_BATCH_STRING_EXTRACTION_ENABLED =
