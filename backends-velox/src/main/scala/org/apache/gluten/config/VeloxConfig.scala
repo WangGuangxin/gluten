@@ -44,6 +44,9 @@ class VeloxConfig(conf: SQLConf) extends GlutenConfig(conf) {
   def runtimeBloomSelectiveKeysMaxFilters: Int = getConf(RUNTIME_BLOOM_SELECTIVE_KEYS_MAX_FILTERS)
   def runtimeBloomSemiJoinEnabled: Boolean = getConf(RUNTIME_BLOOM_SEMI_JOIN_ENABLED)
   def runtimeBloomSemiJoinMaxFilters: Int = getConf(RUNTIME_BLOOM_SEMI_JOIN_MAX_FILTERS)
+  def dimensionBridgeEnabled: Boolean = getConf(DIMENSION_BRIDGE_ENABLED)
+  def dimensionBridgeFactMinBytes: Long = getConf(DIMENSION_BRIDGE_FACT_MIN_BYTES)
+  def dimensionBridgeDimensionMaxBytes: Long = getConf(DIMENSION_BRIDGE_DIMENSION_MAX_BYTES)
 
   def veloxSpillFileSystem: String = getConf(COLUMNAR_VELOX_SPILL_FILE_SYSTEM)
 
@@ -244,6 +247,19 @@ object VeloxConfig extends ConfigRegistry {
       .intConf.checkValue(
         v => v >= 0 && v <= 10,
         "Must be between zero and ten").createWithDefault(2)
+  val DIMENSION_BRIDGE_ENABLED =
+    buildConf("spark.gluten.sql.columnar.backend.velox.joinReorder.dimensionBridge.enabled")
+      .doc("Join two large inner-join inputs with their small bridging dimensions first when the dimensions are related by an extra equality, so that equality becomes part of the large join key. Disabled by default.")
+      .booleanConf.createWithDefault(false)
+  val DIMENSION_BRIDGE_FACT_MIN_BYTES =
+    buildConf("spark.gluten.sql.columnar.backend.velox.joinReorder.dimensionBridge.factMinBytes")
+      .doc("Minimum scanned bytes for an input to be treated as a large join input.")
+      .longConf.checkValue(_ >= 0, "Must not be negative").createWithDefault(1073741824L)
+  val DIMENSION_BRIDGE_DIMENSION_MAX_BYTES =
+    buildConf(
+      "spark.gluten.sql.columnar.backend.velox.joinReorder.dimensionBridge.dimensionMaxBytes")
+      .doc("Maximum scanned bytes for an input to be treated as a bridging dimension.")
+      .longConf.checkValue(_ >= 0, "Must not be negative").createWithDefault(67108864L)
 
   val ROW_CONTAINER_BATCH_STRING_EXTRACTION_ENABLED =
     buildStaticConf(
