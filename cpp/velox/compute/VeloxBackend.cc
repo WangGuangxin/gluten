@@ -72,6 +72,8 @@ DECLARE_bool(velox_arm_sve_gather_enabled);
 DECLARE_bool(velox_arm_sve_bit_unpack_enabled);
 DECLARE_bool(velox_arm_sve_bit_deposit_enabled);
 DECLARE_bool(velox_arm_sve_hash_tail_enabled);
+DECLARE_bool(velox_row_container_batch_fixed_extraction_enabled);
+DECLARE_bool(velox_arm_sve_row_extraction_enabled);
 DECLARE_int32(velox_memory_num_shared_leaf_pools);
 DECLARE_bool(velox_memory_use_hugepages);
 DECLARE_bool(velox_ssd_odirect);
@@ -185,6 +187,10 @@ void VeloxBackend::init(
       backendConf_->get<bool>("spark.gluten.sql.columnar.backend.velox.arm.sveBitDeposit.enabled", false);
   FLAGS_velox_arm_sve_hash_tail_enabled =
       backendConf_->get<bool>("spark.gluten.sql.columnar.backend.velox.arm.sveHashTail.enabled", false);
+  FLAGS_velox_row_container_batch_fixed_extraction_enabled = backendConf_->get<bool>(
+      "spark.gluten.sql.columnar.backend.velox.rowContainer.batchFixedExtraction.enabled", false);
+  FLAGS_velox_arm_sve_row_extraction_enabled =
+      backendConf_->get<bool>("spark.gluten.sql.columnar.backend.velox.arm.sveRowExtraction.enabled", false);
   setByteShuffleLz4Enabled(
       backendConf_->get<bool>("spark.gluten.sql.columnar.backend.velox.shuffle.byteShuffleLz4.enabled", false));
   setArmNeonByteShuffleEnabled(
