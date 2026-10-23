@@ -50,6 +50,8 @@ class VeloxConfig(conf: SQLConf) extends GlutenConfig(conf) {
   def dimensionStringIdsEnabled: Boolean = getConf(DIMENSION_STRING_IDS_ENABLED)
   def dimensionStringIdsFactMinBytes: Long = getConf(DIMENSION_STRING_IDS_FACT_MIN_BYTES)
   def dimensionStringIdsDimensionMaxBytes: Long = getConf(DIMENSION_STRING_IDS_DIMENSION_MAX_BYTES)
+  def bloomFilterBatchProbeEnabled: Boolean = getConf(BLOOM_FILTER_BATCH_PROBE_ENABLED)
+  def armSveBloomProbeEnabled: Boolean = getConf(ARM_SVE_BLOOM_PROBE_ENABLED)
 
   def veloxSpillFileSystem: String = getConf(COLUMNAR_VELOX_SPILL_FILE_SYSTEM)
 
@@ -276,6 +278,15 @@ object VeloxConfig extends ConfigRegistry {
       "spark.gluten.sql.columnar.backend.velox.aggregation.dimensionStringIds.dimensionMaxBytes")
       .doc("Maximum scanned bytes of a dimension whose string keys are encoded.")
       .longConf.checkValue(_ >= 0, "Must not be negative").createWithDefault(67108864L)
+
+  val BLOOM_FILTER_BATCH_PROBE_ENABLED =
+    buildConf("spark.gluten.sql.columnar.backend.velox.bloomFilter.batchProbe.enabled")
+      .doc("Evaluate might_contain with a batched native probe that hashes and prefetches blocks of rows. Results are unchanged. Disabled by default.")
+      .booleanConf.createWithDefault(false)
+  val ARM_SVE_BLOOM_PROBE_ENABLED =
+    buildConf("spark.gluten.sql.columnar.backend.velox.arm.sveBloomProbe.enabled")
+      .doc("With bloomFilter.batchProbe.enabled, use ARM SVE vector hashing and gathers for the batched might_contain probe. Results are unchanged. Disabled by default.")
+      .booleanConf.createWithDefault(false)
 
   val ROW_CONTAINER_BATCH_STRING_EXTRACTION_ENABLED =
     buildStaticConf(

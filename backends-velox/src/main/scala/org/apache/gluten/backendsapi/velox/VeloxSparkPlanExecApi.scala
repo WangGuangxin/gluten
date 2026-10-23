@@ -1390,6 +1390,29 @@ class VeloxSparkPlanExecApi extends SparkPlanExecApi with Logging {
   }
 
   /** Define backend specfic expression mappings. */
+  /**
+   * Routes might_contain to a batched native probe when enabled for the session. The batched
+   * functions return exactly the scalar function's results; the ARM variant additionally uses SVE
+   * hashing and gathers.
+   */
+  override def extraExpressionConverter(
+      substraitExprName: String,
+      expr: Expression,
+      attributeSeq: Seq[Attribute]): Option[ExpressionTransformer] = expr match {
+    case mightContain: VeloxBloomFilterMightContain
+        if VeloxConfig.get.bloomFilterBatchProbeEnabled =>
+      val name =
+        if (VeloxConfig.get.armSveBloomProbeEnabled) "might_contain_batch_sve"
+        else "might_contain_batch"
+      Some(
+        GenericExpressionTransformer(
+          name,
+          mightContain.children.map(
+            ExpressionConverter.replaceWithExpressionTransformer(_, attributeSeq)),
+          mightContain))
+    case _ => None
+  }
+
   override def extraExpressionMappings: Seq[Sig] = {
     Seq(
       Sig[HLLAdapter](ExpressionNames.APPROX_DISTINCT),

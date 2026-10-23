@@ -17,13 +17,40 @@
 package org.apache.gluten.config
 
 import org.apache.gluten.backendsapi.BackendsApiManager
+import org.apache.gluten.expression.{GenericExpressionTransformer, VeloxBloomFilterMightContain}
 
 import org.apache.spark.sql.GlutenQueryTest
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Literal}
 import org.apache.spark.sql.test.SharedSparkSession
+import org.apache.spark.sql.types.{BinaryType, LongType}
 
 class GlutenArmTuningConfigSuite extends GlutenQueryTest with SharedSparkSession {
   // Register static options before testing forwarding in an isolated suite.
   private val sveGatherConfig = VeloxConfig.ARM_SVE_GATHER_ENABLED
+
+  test("batched might_contain is opt-in per session and selects the SVE probe separately") {
+    if (BackendsApiManager.getBackendName != "velox") {
+      cancel("Batched might_contain is specific to the Velox backend")
+    }
+    val batch = "spark.gluten.sql.columnar.backend.velox.bloomFilter.batchProbe.enabled"
+    val sve = "spark.gluten.sql.columnar.backend.velox.arm.sveBloomProbe.enabled"
+    assert(!VeloxConfig.BLOOM_FILTER_BATCH_PROBE_ENABLED.defaultValue.get)
+    assert(!VeloxConfig.ARM_SVE_BLOOM_PROBE_ENABLED.defaultValue.get)
+    val value = AttributeReference("v", LongType)()
+    val expr = VeloxBloomFilterMightContain(Literal(Array[Byte](1, 0, 0, 0, 1), BinaryType), value)
+    val api = BackendsApiManager.getSparkPlanExecApiInstance
+    def converted: Option[String] = api.extraExpressionConverter("might_contain", expr, Seq(value))
+      .map(_.asInstanceOf[GenericExpressionTransformer].substraitExprName)
+    Seq(
+      ("false", "false", None),
+      ("false", "true", None),
+      ("true", "false", Some("might_contain_batch")),
+      ("true", "true", Some("might_contain_batch_sve"))
+    ).foreach {
+      case (batchValue, sveValue, expected) =>
+        withSQLConf(batch -> batchValue, sve -> sveValue)(assert(converted == expected))
+    }
+  }
 
   test("batch hash-build store preserves duplicate joins nulls strings and decimals") {
     if (BackendsApiManager.getBackendName != "velox") {
