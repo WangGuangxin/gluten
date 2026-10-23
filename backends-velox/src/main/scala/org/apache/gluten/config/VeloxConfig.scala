@@ -31,6 +31,8 @@ import java.util.concurrent.TimeUnit
 class VeloxConfig(conf: SQLConf) extends GlutenConfig(conf) {
   import VeloxConfig._
 
+  def bloomFilterBatchProbeEnabled: Boolean = getConf(BLOOM_FILTER_BATCH_PROBE_ENABLED)
+  def armSveBloomProbeEnabled: Boolean = getConf(ARM_SVE_BLOOM_PROBE_ENABLED)
   def veloxSpillFileSystem: String = getConf(COLUMNAR_VELOX_SPILL_FILE_SYSTEM)
 
   def veloxResizeBatchesShuffleInput: Boolean =
@@ -136,6 +138,15 @@ class VeloxConfig(conf: SQLConf) extends GlutenConfig(conf) {
 }
 
 object VeloxConfig extends ConfigRegistry {
+  val BLOOM_FILTER_BATCH_PROBE_ENABLED =
+    buildConf("spark.gluten.sql.columnar.backend.velox.bloomFilter.batchProbe.enabled")
+      .doc("Evaluate might_contain with a batched native probe that hashes and prefetches blocks of rows. Results are unchanged. Disabled by default.")
+      .booleanConf.createWithDefault(false)
+  val ARM_SVE_BLOOM_PROBE_ENABLED =
+    buildConf("spark.gluten.sql.columnar.backend.velox.arm.sveBloomProbe.enabled")
+      .doc("With bloomFilter.batchProbe.enabled, use ARM SVE vector hashing and gathers for the batched might_contain probe. Results are unchanged. Disabled by default.")
+      .booleanConf.createWithDefault(false)
+
   val HASH_SHUFFLE_SVE_GATHER_ENABLED =
     buildConf("spark.gluten.sql.columnar.backend.velox.hashShuffle.sveGather.enabled")
       .doc("Use native SVE gather for fixed-width hash shuffle columns on SVE builds.")
