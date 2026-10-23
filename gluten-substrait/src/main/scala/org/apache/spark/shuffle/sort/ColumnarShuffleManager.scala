@@ -24,7 +24,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.serializer.SerializerManager
 import org.apache.spark.shuffle._
 import org.apache.spark.shuffle.api.ShuffleExecutorComponents
-import org.apache.spark.storage.BlockId
+import org.apache.spark.storage.{BlockId, GlutenShuffleIndexCache}
 import org.apache.spark.util.collection.OpenHashSet
 
 import java.io.InputStream
@@ -199,6 +199,7 @@ class ColumnarShuffleManager(conf: SparkConf)
 
   /** Remove a shuffle's metadata from the ShuffleManager. */
   override def unregisterShuffle(shuffleId: Int): Boolean = {
+    GlutenShuffleIndexCache.removeShuffle(shuffleId)
     Option(taskIdMapsForShuffle.remove(shuffleId)).foreach {
       mapTaskIds =>
         // The block-migration path mutates this set under the same lock; iterating without it

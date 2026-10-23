@@ -680,7 +680,7 @@ final class GlutenShuffleBlockFetcherIterator(
       localDirs: Array[String],
       blockManagerId: BlockManagerId): Boolean = {
     try {
-      val buf = blockManager.getHostLocalShuffleData(blockId, localDirs)
+      val buf = GlutenShuffleIndexCache.getHostLocalShuffleData(blockManager, blockId, localDirs)
       buf.retain()
       results.put(
         SuccessFetchResult(

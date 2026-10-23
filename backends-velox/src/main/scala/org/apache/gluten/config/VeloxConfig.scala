@@ -288,6 +288,18 @@ object VeloxConfig extends ConfigRegistry {
       .doc("With bloomFilter.batchProbe.enabled, use ARM SVE vector hashing and gathers for the batched might_contain probe. Results are unchanged. Disabled by default.")
       .booleanConf.createWithDefault(false)
 
+  val SHUFFLE_INDEX_CACHE_ENABLED =
+    buildStaticConf("spark.gluten.sql.columnar.backend.velox.shuffle.indexCache.enabled")
+      .doc("Cache shuffle index file offsets per executor for host-local block reads instead of reopening the index file for every block. Ignored with spark.shuffle.useOldFetchProtocol. Set before Spark starts.")
+      .booleanConf
+      .createWithDefault(false)
+
+  val SHUFFLE_INDEX_CACHE_MAX_BYTES =
+    buildStaticConf("spark.gluten.sql.columnar.backend.velox.shuffle.indexCache.maxBytes")
+      .doc("Executor heap budget of the shuffle index cache. Least recently used shuffles are evicted as a whole. Set before Spark starts.")
+      .bytesConf(ByteUnit.BYTE)
+      .createWithDefaultString("128MB")
+
   val ROW_CONTAINER_BATCH_STRING_EXTRACTION_ENABLED =
     buildStaticConf(
       "spark.gluten.sql.columnar.backend.velox.rowContainer.batchStringExtraction.enabled")
