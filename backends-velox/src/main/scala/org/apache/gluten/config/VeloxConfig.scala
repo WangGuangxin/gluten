@@ -42,6 +42,8 @@ class VeloxConfig(conf: SQLConf) extends GlutenConfig(conf) {
   def runtimeBloomSelectiveKeysMaxCreationKeyBytes: Long =
     getConf(RUNTIME_BLOOM_SELECTIVE_KEYS_MAX_CREATION_KEY_BYTES)
   def runtimeBloomSelectiveKeysMaxFilters: Int = getConf(RUNTIME_BLOOM_SELECTIVE_KEYS_MAX_FILTERS)
+  def runtimeBloomSemiJoinEnabled: Boolean = getConf(RUNTIME_BLOOM_SEMI_JOIN_ENABLED)
+  def runtimeBloomSemiJoinMaxFilters: Int = getConf(RUNTIME_BLOOM_SEMI_JOIN_MAX_FILTERS)
 
   def veloxSpillFileSystem: String = getConf(COLUMNAR_VELOX_SPILL_FILE_SYSTEM)
 
@@ -229,6 +231,16 @@ object VeloxConfig extends ConfigRegistry {
     buildConf("spark.gluten.sql.columnar.backend.velox.runtimeBloom.selectiveKeys.maxFilters")
       .doc(
         "Maximum additional filters in a single selective-key wave per query, between zero and ten.")
+      .intConf.checkValue(
+        v => v >= 0 && v <= 10,
+        "Must be between zero and ten").createWithDefault(2)
+  val RUNTIME_BLOOM_SEMI_JOIN_ENABLED =
+    buildConf("spark.gluten.sql.columnar.backend.velox.runtimeBloom.semiJoin.enabled")
+      .doc("Build a Bloom filter from the runtime-filtered retained side of a left semi/anti equijoin and prune its existence side through inner equijoins and grouping keys. Disabled by default.")
+      .booleanConf.createWithDefault(false)
+  val RUNTIME_BLOOM_SEMI_JOIN_MAX_FILTERS =
+    buildConf("spark.gluten.sql.columnar.backend.velox.runtimeBloom.semiJoin.maxFilters")
+      .doc("Maximum semi/anti existence-side filters per query, between zero and ten.")
       .intConf.checkValue(
         v => v >= 0 && v <= 10,
         "Must be between zero and ten").createWithDefault(2)
