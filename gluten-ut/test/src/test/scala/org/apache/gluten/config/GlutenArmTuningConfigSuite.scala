@@ -181,6 +181,28 @@ class GlutenArmTuningConfigSuite extends GlutenQueryTest with SharedSparkSession
     }
   }
 
+  test("integer row extraction switches are independently opt-in and application-static") {
+    if (BackendsApiManager.getBackendName != "velox") {
+      cancel("Integer row extraction is specific to the Velox backend")
+    }
+    Seq(
+      VeloxConfig.ROW_CONTAINER_BATCH_FIXED_EXTRACTION_ENABLED ->
+        "spark.gluten.sql.columnar.backend.velox.rowContainer.batchFixedExtraction.enabled",
+      VeloxConfig.ARM_SVE_ROW_EXTRACTION_ENABLED ->
+        "spark.gluten.sql.columnar.backend.velox.arm.sveRowExtraction.enabled"
+    ).foreach {
+      case (config, key) =>
+        assert(!config.defaultValue.get)
+        Seq("false", "true").foreach {
+          enabled =>
+            assert(GlutenConfig.getNativeBackendConf(
+              "velox",
+              Map(key -> enabled)).get(key) == enabled)
+            assert(!GlutenConfig.getNativeSessionConf("velox", Map(key -> enabled)).contains(key))
+        }
+    }
+  }
+
   test("ARM SVE hash tail is opt-in and application-static") {
     if (BackendsApiManager.getBackendName != "velox") {
       cancel("ARM SVE hash tail is specific to the Velox backend")

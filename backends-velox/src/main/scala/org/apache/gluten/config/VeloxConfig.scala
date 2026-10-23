@@ -260,6 +260,21 @@ object VeloxConfig extends ConfigRegistry {
       .booleanConf
       .createWithDefault(false)
 
+  val ROW_CONTAINER_BATCH_FIXED_EXTRACTION_ENABLED =
+    buildStaticConf(
+      "spark.gluten.sql.columnar.backend.velox.rowContainer.batchFixedExtraction.enabled")
+      .doc("Batch integer row extraction and null bitmap updates. Set before Spark starts.")
+      .booleanConf
+      .createWithDefault(false)
+
+  val ARM_SVE_ROW_EXTRACTION_ENABLED =
+    buildStaticConf("spark.gluten.sql.columnar.backend.velox.arm.sveRowExtraction.enabled")
+      .doc("Use predicated ARM SVE gathers for direct non-nullable integer row extraction. " +
+        "Preserves the NEON ABI. Other paths need the independent batch switch. " +
+        "Requires an SVE-enabled native build. Set before Spark starts.")
+      .booleanConf
+      .createWithDefault(false)
+
   val ARM_SVE_HASH_TAIL_ENABLED =
     buildStaticConf("spark.gluten.sql.columnar.backend.velox.arm.sveHashTail.enabled")
       .doc("Read bounded CRC32C string-hash tails with predicated ARM SVE loads. " +

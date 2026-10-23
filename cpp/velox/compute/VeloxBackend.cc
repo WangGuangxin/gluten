@@ -76,6 +76,8 @@ DECLARE_bool(velox_arm_sve_gather_enabled);
 DECLARE_bool(velox_arm_sve_bit_unpack_enabled);
 DECLARE_bool(velox_arm_sve_bit_deposit_enabled);
 DECLARE_bool(velox_arm_sve_hash_tail_enabled);
+DECLARE_bool(velox_row_container_batch_fixed_extraction_enabled);
+DECLARE_bool(velox_arm_sve_row_extraction_enabled);
 DECLARE_bool(velox_row_container_string_extraction_prefetch_enabled);
 DECLARE_bool(velox_hash_join_fixed_width_output_enabled);
 DECLARE_bool(velox_hash_join_head_chain_drain_enabled);
@@ -202,6 +204,10 @@ void VeloxBackend::init(
       backendConf_->get<bool>("spark.gluten.sql.columnar.backend.velox.arm.sveBitDeposit.enabled", false);
   FLAGS_velox_arm_sve_hash_tail_enabled =
       backendConf_->get<bool>("spark.gluten.sql.columnar.backend.velox.arm.sveHashTail.enabled", false);
+  FLAGS_velox_row_container_batch_fixed_extraction_enabled = backendConf_->get<bool>(
+      "spark.gluten.sql.columnar.backend.velox.rowContainer.batchFixedExtraction.enabled", false);
+  FLAGS_velox_arm_sve_row_extraction_enabled =
+      backendConf_->get<bool>("spark.gluten.sql.columnar.backend.velox.arm.sveRowExtraction.enabled", false);
 
   FLAGS_velox_hash_join_compact_chains_enabled =
       backendConf_->get<bool>("spark.gluten.sql.columnar.backend.velox.hashJoin.compactChains.enabled", false);
