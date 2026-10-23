@@ -153,6 +153,11 @@ class GlutenSemiJoinRuntimeBloomFilterSuite extends GlutenQueryTest with SharedS
       })
       assert(changed.output == input.output)
       assert(rule.apply(changed).fastEquals(changed))
+      // The retained fact scan does not wait for a filter built from itself.
+      assert(!changed.exists {
+        case Filter(c, child) => ours(c) && child.output.exists(_.name == "fid")
+        case _ => false
+      })
     }
   }
 

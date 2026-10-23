@@ -91,6 +91,20 @@ case class SemiJoinRuntimeBloomFilter(session: SparkSession)
     case _ => plan
   }
 
+  private def ours(e: Expression): Boolean = e match {
+    case BloomFilterMightContain(query: ScalarSubquery, _) => query.plan.exists {
+        case aggregate: Aggregate => aggregate.aggregateExpressions.exists(_.name == marker)
+        case _ => false
+      }
+    case _ => false
+  }
+
+  @scala.annotation.tailrec
+  private def base(p: LogicalPlan): LogicalPlan = p match {
+    case Project(_, child) => base(child)
+    case other => other
+  }
+
   private def hasBloomForKey(plan: LogicalPlan, wanted: Expression): Boolean = plan.exists {
     case Filter(condition, _) => splitConjunctivePredicates(condition).exists {
         case BloomFilterMightContain(_, XxHash64(Seq(value), _)) => value.semanticEquals(wanted)
@@ -141,6 +155,7 @@ case class SemiJoinRuntimeBloomFilter(session: SparkSession)
         right.canonicalized -> retainedBase(left).canonicalized
     }.groupBy(_._1).map { case (k, v) => k -> v.map(_._2).distinct.size }
     var added = 0
+    val sources = scala.collection.mutable.ArrayBuffer.empty[LogicalPlan]
     def create(
         application: LogicalPlan,
         applicationKey: Expression,
@@ -174,6 +189,7 @@ case class SemiJoinRuntimeBloomFilter(session: SparkSession)
       logInfo(s"SemiJoinRuntimeBloomFilter key=$retainedKey existence=$applicationKey")
       total += 1
       added += 1
+      sources += base(creation)
       Some(Filter(predicate, application))
     }
     val changed = plan.transformUp {
@@ -208,7 +224,27 @@ case class SemiJoinRuntimeBloomFilter(session: SparkSession)
       for (_ <- 0 until 2) {
         result = PushDownPredicates(InferFiltersFromConstraints(result))
       }
-      result
+      // Constraint inference also copies the filter back onto the retained
+      // scan it was built from, where it passes every row but makes that scan
+      // wait for its own filter job. Remove those copies.
+      // Compare scans by their non-null-check predicates: inference may add
+      // IS NOT NULL on the join key, which never admits extra rows here.
+      def signature(p: LogicalPlan): (Set[Expression], LogicalPlan) = base(p) match {
+        case Filter(c, child) =>
+          (
+            splitConjunctivePredicates(c).filterNot(e => ours(e) || e.isInstanceOf[IsNotNull])
+              .map(_.canonicalized).toSet,
+            child.canonicalized)
+        case other => (Set.empty, other.canonicalized)
+      }
+      val bases = sources.map(signature).toSet
+      result.transformUp {
+        case f @ Filter(condition, child)
+            if splitConjunctivePredicates(condition).exists(ours) &&
+              bases.contains(signature(f)) =>
+          splitConjunctivePredicates(condition).filterNot(ours).reduceOption(And)
+            .map(Filter(_, child)).getOrElse(child)
+      }
     }
   }
 }
