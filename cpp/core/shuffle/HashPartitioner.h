@@ -18,12 +18,22 @@
 #pragma once
 
 #include "shuffle/Partitioner.h"
+#if defined(__aarch64__)
+#include "shuffle/PartitionId.h"
+#endif
 
 namespace gluten {
 
 class HashPartitioner final : public Partitioner {
  public:
-  HashPartitioner(int32_t numPartitions) : Partitioner(numPartitions, true) {}
+  HashPartitioner(int32_t numPartitions)
+      : Partitioner(numPartitions, true)
+#if defined(__aarch64__)
+        ,
+        modulus_(numPartitions)
+#endif
+  {
+  }
 
   arrow::Status compute(const int32_t* pidArr, const int64_t numRows, std::vector<uint32_t>& row2partition) override;
 
@@ -32,6 +42,11 @@ class HashPartitioner final : public Partitioner {
       const int64_t numRows,
       const int32_t vectorIndex,
       std::unordered_map<int32_t, std::vector<int64_t>>& rowVectorIndexMap) override;
+
+ private:
+#if defined(__aarch64__)
+  detail::PartitionIdModulus modulus_;
+#endif
 };
 
 } // namespace gluten

@@ -18,6 +18,7 @@
 #include "shuffle/VeloxHashShuffleWriter.h"
 #include "memory/ArrowMemory.h"
 #include "memory/VeloxColumnarBatch.h"
+#include "shuffle/BitmapGather.h"
 #include "shuffle/Utils.h"
 #include "shuffle/VeloxTypeAwareCompress.h"
 #include "utils/Common.h"
@@ -570,6 +571,20 @@ arrow::Status VeloxHashShuffleWriter::splitFixedWidthValueBuffer(const facebook:
 }
 
 void VeloxHashShuffleWriter::splitBoolType(const uint8_t* srcAddr, const std::vector<uint8_t*>& dstAddrs) {
+#if defined(__aarch64__)
+  for (const auto pid : partitionUsed_) {
+    if (dstAddrs[pid] != nullptr) {
+      const auto begin = partition2RowOffsetBase_[pid];
+      detail::gatherBitmap(
+          srcAddr,
+          rowOffset2RowId_.data() + begin,
+          partition2RowOffsetBase_[pid + 1] - begin,
+          dstAddrs[pid],
+          partitionBufferBase_[pid],
+          enableSveGather_);
+    }
+  }
+#else
   // assume batch size = 32k; reducer# = 4K; row/reducer = 8
   for (auto& pid : partitionUsed_) {
     // set the last byte
@@ -655,6 +670,7 @@ void VeloxHashShuffleWriter::splitBoolType(const uint8_t* srcAddr, const std::ve
       dstaddr[dstOffset >> 3] = dst;
     }
   }
+#endif
 }
 
 arrow::Status VeloxHashShuffleWriter::splitValidityBuffer(const facebook::velox::RowVector& rv) {
