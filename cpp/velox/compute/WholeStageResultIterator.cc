@@ -537,6 +537,22 @@ std::unordered_map<std::string, std::string> WholeStageResultIterator::getQueryC
       std::to_string(veloxCfg_->get<int32_t>(kHashJoinAheadWindow, 8));
   configs[velox::core::QueryConfig::kHashJoinPrefetchEnabled] =
       veloxCfg_->get<bool>(kHashJoinPrefetchEnabled, true) ? "true" : "false";
+  // These options are available in Velox branches with parallel-chain probing.
+  // Keep compatibility with branches that use the standard probe implementation.
+  auto setHashJoinOptions = [&]<typename QueryConfig>() {
+    if constexpr (requires {
+                    QueryConfig::kHashJoinNumParallelChains;
+                    QueryConfig::kHashJoinAheadWindow;
+                    QueryConfig::kHashJoinPrefetchEnabled;
+                  }) {
+      configs[QueryConfig::kHashJoinNumParallelChains] =
+          std::to_string(veloxCfg_->get<int32_t>(kHashJoinNumParallelChains, 8));
+      configs[QueryConfig::kHashJoinAheadWindow] = std::to_string(veloxCfg_->get<int32_t>(kHashJoinAheadWindow, 8));
+      configs[QueryConfig::kHashJoinPrefetchEnabled] =
+          veloxCfg_->get<bool>(kHashJoinPrefetchEnabled, true) ? "true" : "false";
+    }
+  };
+  setHashJoinOptions.template operator()<velox::core::QueryConfig>();
   // Find batch size from Spark confs. If found, set the preferred and max batch size.
   configs[velox::core::QueryConfig::kPreferredOutputBatchRows] =
       std::to_string(veloxCfg_->get<uint32_t>(kSparkBatchSize, 4096));

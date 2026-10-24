@@ -177,6 +177,14 @@ void VeloxBackend::init(
   // Avoid creating too many shared leaf pools.
   FLAGS_velox_memory_num_shared_leaf_pools = 0;
 
+  // This application-static option is present only in Velox branches with
+  // batched string extraction. Set it by name when that feature is registered.
+  std::string batchStringExtraction;
+  if (gflags::GetCommandLineOption("velox_row_container_batch_string_extraction_enabled", &batchStringExtraction)) {
+    gflags::SetCommandLineOption(
+        "velox_row_container_batch_string_extraction_enabled",
+        backendConf_->get<bool>(kRowContainerBatchStringExtractionEnabled, false) ? "true" : "false");
+  }
 
   // Application-static: all worker tasks observe a fixed gather implementation.
   FLAGS_velox_arm_sve_gather_enabled =
