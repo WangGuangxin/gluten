@@ -40,10 +40,14 @@ int32_t computePid(const int32_t* pidArr, int64_t i, int32_t numPartitions) {
 arrow::Status
 gluten::HashPartitioner::compute(const int32_t* pidArr, const int64_t numRows, std::vector<uint32_t>& row2partition) {
   row2partition.resize(numRows);
+#if defined(__aarch64__)
+  modulus_.compute(pidArr, numRows, row2partition.data());
+#else
   for (auto i = 0; i < numRows; ++i) {
     auto pid = computePid(pidArr, i, numPartitions_);
     row2partition[i] = pid;
   }
+#endif
   return arrow::Status::OK();
 }
 
@@ -54,7 +58,11 @@ arrow::Status gluten::HashPartitioner::compute(
     std::unordered_map<int32_t, std::vector<int64_t>>& rowVectorIndexMap) {
   auto index = static_cast<int64_t>(vectorIndex) << 32;
   for (auto i = 0; i < numRows; ++i) {
+#if defined(__aarch64__)
+    auto pid = modulus_(pidArr[i]);
+#else
     auto pid = computePid(pidArr, i, numPartitions_);
+#endif
     int64_t combined = index | (static_cast<int64_t>(i) & 0xFFFFFFFFLL);
     auto& vec = rowVectorIndexMap[pid];
     vec.push_back(combined);
