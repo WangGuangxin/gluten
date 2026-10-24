@@ -251,6 +251,9 @@ add_library(velox SHARED ${VELOX_SRCS})
 if(ENABLE_GLUTEN_VCPKG)
   find_package(xxHash CONFIG REQUIRED)
   target_link_libraries(velox PUBLIC xxHash::xxhash)
+else()
+  find_library(GLUTEN_XXHASH_LIBRARY NAMES xxhash REQUIRED)
+  target_link_libraries(velox PUBLIC ${GLUTEN_XXHASH_LIBRARY})
 endif()
 
 # Keep ABI sensitive Velox feature macros in sync

@@ -70,7 +70,6 @@
 #include "velox/serializers/PrestoSerializer.h"
 
 DECLARE_bool(velox_exception_user_stacktrace_enabled);
-DECLARE_bool(velox_row_container_batch_string_extraction_enabled);
 DECLARE_bool(velox_row_container_string_equality_enabled);
 DECLARE_bool(velox_arm_sve_gather_enabled);
 DECLARE_bool(velox_arm_sve_bit_unpack_enabled);
@@ -188,8 +187,14 @@ void VeloxBackend::init(
   FLAGS_velox_memory_num_shared_leaf_pools = 0;
 
   // Application-static: never mutate this flag from a task/query config.
-  FLAGS_velox_row_container_batch_string_extraction_enabled =
-      backendConf_->get<bool>(kRowContainerBatchStringExtractionEnabled, false);
+  // This application-static option is present only in Velox branches with
+  // batched string extraction. Set it by name when that feature is registered.
+  std::string batchStringExtraction;
+  if (gflags::GetCommandLineOption("velox_row_container_batch_string_extraction_enabled", &batchStringExtraction)) {
+    gflags::SetCommandLineOption(
+        "velox_row_container_batch_string_extraction_enabled",
+        backendConf_->get<bool>(kRowContainerBatchStringExtractionEnabled, false) ? "true" : "false");
+  }
   FLAGS_velox_row_container_string_extraction_prefetch_enabled = backendConf_->get<bool>(
       "spark.gluten.sql.columnar.backend.velox.rowContainer.stringExtractionPrefetch.enabled", false);
   FLAGS_velox_row_container_string_equality_enabled =

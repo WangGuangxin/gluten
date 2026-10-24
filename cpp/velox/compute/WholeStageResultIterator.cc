@@ -546,12 +546,22 @@ std::unordered_map<std::string, std::string> WholeStageResultIterator::getQueryC
       std::to_string(veloxCfg_->get<int64_t>(kGroupingSetsValueIdsMaxStringValues, 500000));
   configs[velox::core::QueryConfig::kGroupingSetsBatchingEnabled] =
       veloxCfg_->get<bool>(kGroupingSetsBatchingEnabled, false) ? "true" : "false";
-  configs[velox::core::QueryConfig::kHashJoinNumParallelChains] =
-      std::to_string(veloxCfg_->get<int32_t>(kHashJoinNumParallelChains, 8));
-  configs[velox::core::QueryConfig::kHashJoinAheadWindow] =
-      std::to_string(veloxCfg_->get<int32_t>(kHashJoinAheadWindow, 8));
-  configs[velox::core::QueryConfig::kHashJoinPrefetchEnabled] =
-      veloxCfg_->get<bool>(kHashJoinPrefetchEnabled, true) ? "true" : "false";
+  // These options are available in Velox branches with parallel-chain probing.
+  // Keep compatibility with branches that use the standard probe implementation.
+  auto setHashJoinOptions = [&]<typename QueryConfig>() {
+    if constexpr (requires {
+                    QueryConfig::kHashJoinNumParallelChains;
+                    QueryConfig::kHashJoinAheadWindow;
+                    QueryConfig::kHashJoinPrefetchEnabled;
+                  }) {
+      configs[QueryConfig::kHashJoinNumParallelChains] =
+          std::to_string(veloxCfg_->get<int32_t>(kHashJoinNumParallelChains, 8));
+      configs[QueryConfig::kHashJoinAheadWindow] = std::to_string(veloxCfg_->get<int32_t>(kHashJoinAheadWindow, 8));
+      configs[QueryConfig::kHashJoinPrefetchEnabled] =
+          veloxCfg_->get<bool>(kHashJoinPrefetchEnabled, true) ? "true" : "false";
+    }
+  };
+  setHashJoinOptions.template operator()<velox::core::QueryConfig>();
   configs[velox::core::QueryConfig::kHashJoinAdaptiveValueIdsEnabled] =
       veloxCfg_->get<bool>(kHashJoinAdaptiveValueIdsEnabled, false) ? "true" : "false";
   configs[velox::core::QueryConfig::kHashJoinAdaptiveValueIdsMinRows] =
