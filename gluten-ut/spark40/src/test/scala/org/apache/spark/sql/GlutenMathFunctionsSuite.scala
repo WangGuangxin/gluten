@@ -17,6 +17,31 @@
 package org.apache.spark.sql
 
 class GlutenMathFunctionsSuite extends MathFunctionsSuite with GlutenSQLTestsTrait {
+  test("ARM round constant precision preserves Spark special values") {
+    import testImplicits._
+    withTempView("arm_round_values") {
+      Seq[java.lang.Double](
+        null,
+        -0.0,
+        0.0,
+        1.005,
+        -1.005,
+        2.675,
+        -2.675,
+        Double.NaN,
+        Double.PositiveInfinity,
+        Double.NegativeInfinity)
+        .toDF("v").createOrReplaceTempView("arm_round_values")
+      for (scale <- Seq(-2, 0, 2)) {
+        val query = s"select v, round(v, $scale) from arm_round_values"
+        val expected = withSQLConf("spark.gluten.enabled" -> "false")(sql(query).collect())
+        withSQLConf("spark.gluten.enabled" -> "true") {
+          checkAnswer(sql(query), expected.toSeq)
+        }
+      }
+    }
+  }
+
   test("ARM shuffle keeps Spark partition IDs for signed hashes") {
     import testImplicits._
     import org.apache.spark.sql.functions.{col, spark_partition_id}

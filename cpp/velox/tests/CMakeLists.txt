@@ -112,6 +112,8 @@ target_include_directories(arm_shuffle_kernel_test
 target_link_libraries(arm_shuffle_kernel_test PRIVATE GTest::gtest_main)
 gtest_discover_tests(arm_shuffle_kernel_test DISCOVERY_MODE PRE_TEST)
 
+add_velox_test(round_initialization_test SOURCES RoundInitializationTest.cc)
+
 add_velox_test(velox_shuffle_writer_test SOURCES VeloxShuffleWriterTest.cc)
 
 add_velox_test(velox_hash_table_batch_store_test SOURCES

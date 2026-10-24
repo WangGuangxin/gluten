@@ -22,6 +22,9 @@
 #include <cmath>
 #include <limits>
 #include <type_traits>
+#include <vector>
+#include "velox/core/QueryConfig.h"
+#include "velox/type/Type.h"
 
 namespace gluten {
 template <typename T>
@@ -35,6 +38,26 @@ template <typename T>
 /// We are trying to minimize the loss of precision by using the best path for
 /// the number, but the journey is likely not over yet.
 struct RoundFunction {
+  // Velox passes a non-null scale only for a constant argument. Compute its
+  // long-double power once per function instance and retain Spark rounding.
+  template <typename TInput>
+  void
+  initialize(const std::vector<facebook::velox::TypePtr>&, const facebook::velox::core::QueryConfig&, const TInput*) {
+    constantPrecision_ = true;
+    factor_ = 1.0L;
+  }
+
+  template <typename TInput>
+  void initialize(
+      const std::vector<facebook::velox::TypePtr>&,
+      const facebook::velox::core::QueryConfig&,
+      const TInput*,
+      const int32_t* decimals) {
+    constantPrecision_ = decimals != nullptr;
+    if (constantPrecision_) {
+      factor_ = std::pow(10.0L, static_cast<long double>(*decimals));
+    }
+  }
   template <typename TNum, typename TDecimals, bool alwaysRoundNegDec = true>
   FOLLY_ALWAYS_INLINE TNum round(const TNum& number, const TDecimals& decimals = 0) {
     static_assert(!std::is_same_v<TNum, bool> && "round not supported for bool");
@@ -53,7 +76,7 @@ struct RoundFunction {
 
     // Using long double for high precision during intermediate calculations.
     // TODO: Make this more efficient with Boost to support high arbitrary precision at runtime.
-    long double factor = std::pow(10.0L, static_cast<long double>(decimals));
+    const long double factor = constantPrecision_ ? factor_ : std::pow(10.0L, static_cast<long double>(decimals));
     static const TNum kInf = std::numeric_limits<TNum>::infinity();
 
     if (number < 0) {
@@ -65,5 +88,9 @@ struct RoundFunction {
   FOLLY_ALWAYS_INLINE void call(TInput& result, const TInput& a, const int32_t b = 0) {
     result = round(a, b);
   }
+
+ private:
+  bool constantPrecision_{false};
+  long double factor_{1.0L};
 };
 } // namespace gluten
