@@ -177,6 +177,13 @@ void VeloxBackend::init(
   // Avoid creating too many shared leaf pools.
   FLAGS_velox_memory_num_shared_leaf_pools = 0;
 
+  std::string armPrefetchDistance;
+  if (gflags::GetCommandLineOption("velox_arm_hash_table_prefetch_distance", &armPrefetchDistance)) {
+    const auto distance = backendConf_->get<int32_t>(kArmHashTablePrefetchDistance, 10);
+    VELOX_CHECK_GE(distance, 0, "ARM hash-table prefetch distance must be non-negative");
+    gflags::SetCommandLineOption("velox_arm_hash_table_prefetch_distance", std::to_string(distance).c_str());
+  }
+
   // This application-static option is present only in Velox branches with
   // batched string extraction. Set it by name when that feature is registered.
   std::string batchStringExtraction;

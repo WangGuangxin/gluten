@@ -25,6 +25,7 @@ const std::string kHashShuffleSveGatherEnabled =
 const std::string kHashJoinNumParallelChains = "spark.gluten.sql.columnar.backend.velox.hashJoin.numParallelChains";
 const std::string kHashJoinAheadWindow = "spark.gluten.sql.columnar.backend.velox.hashJoin.aheadWindow";
 const std::string kHashJoinPrefetchEnabled = "spark.gluten.sql.columnar.backend.velox.hashJoin.prefetch.enabled";
+const std::string kArmHashTablePrefetchDistance = "spark.gluten.sql.columnar.backend.velox.hashTable.prefetchDistance";
 // memory
 const std::string kSpillStrategy = "spark.gluten.sql.columnar.backend.velox.spillStrategy";
 const std::string kSpillStrategyDefaultValue = "auto";
