@@ -45,6 +45,7 @@ const std::string kGroupingSetsValueIdsMaxStringValues =
 
 const std::string kGroupingSetsBatchingEnabled =
     "spark.gluten.sql.columnar.backend.velox.aggregation.groupingSetsBatching.enabled";
+const std::string kArmHashTablePrefetchDistance = "spark.gluten.sql.columnar.backend.velox.hashTable.prefetchDistance";
 // memory
 const std::string kSpillStrategy = "spark.gluten.sql.columnar.backend.velox.spillStrategy";
 const std::string kSpillStrategyDefaultValue = "auto";
