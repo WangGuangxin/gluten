@@ -16,4 +16,20 @@
  */
 package org.apache.spark.sql
 
-class GlutenMathFunctionsSuite extends MathFunctionsSuite with GlutenSQLTestsTrait {}
+class GlutenMathFunctionsSuite extends MathFunctionsSuite with GlutenSQLTestsTrait {
+  test("ARM shuffle keeps Spark partition IDs for signed hashes") {
+    import testImplicits._
+    import org.apache.spark.sql.functions.{col, spark_partition_id}
+    withSQLConf("spark.sql.adaptive.enabled" -> "false") {
+      val keys = (Seq(Int.MinValue, Int.MaxValue, -1, 0, 1) ++ (-1000 until 1000)).toDF("v")
+      for (partitions <- Seq(3, 7, 64)) {
+        def partitioned = keys.repartition(partitions, col("v"))
+          .select(col("v"), spark_partition_id().as("pid"))
+        val expected = withSQLConf("spark.gluten.enabled" -> "false")(partitioned.collect())
+        withSQLConf("spark.gluten.enabled" -> "true") {
+          checkAnswer(partitioned, expected.toSeq)
+        }
+      }
+    }
+  }
+}
