@@ -531,12 +531,6 @@ void WholeStageResultIterator::collectMetrics() {
 
 std::unordered_map<std::string, std::string> WholeStageResultIterator::getQueryContextConf() {
   std::unordered_map<std::string, std::string> configs = {};
-  configs[velox::core::QueryConfig::kHashJoinNumParallelChains] =
-      std::to_string(veloxCfg_->get<int32_t>(kHashJoinNumParallelChains, 8));
-  configs[velox::core::QueryConfig::kHashJoinAheadWindow] =
-      std::to_string(veloxCfg_->get<int32_t>(kHashJoinAheadWindow, 8));
-  configs[velox::core::QueryConfig::kHashJoinPrefetchEnabled] =
-      veloxCfg_->get<bool>(kHashJoinPrefetchEnabled, true) ? "true" : "false";
   // These options are available in Velox branches with parallel-chain probing.
   // Keep compatibility with branches that use the standard probe implementation.
   auto setHashJoinOptions = [&]<typename QueryConfig>() {

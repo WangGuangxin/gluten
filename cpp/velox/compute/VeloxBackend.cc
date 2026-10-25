@@ -184,15 +184,6 @@ void VeloxBackend::init(
     gflags::SetCommandLineOption("velox_arm_hash_table_prefetch_distance", std::to_string(distance).c_str());
   }
 
-  // This application-static option is present only in Velox branches with
-  // batched string extraction. Set it by name when that feature is registered.
-  std::string batchStringExtraction;
-  if (gflags::GetCommandLineOption("velox_row_container_batch_string_extraction_enabled", &batchStringExtraction)) {
-    gflags::SetCommandLineOption(
-        "velox_row_container_batch_string_extraction_enabled",
-        backendConf_->get<bool>(kRowContainerBatchStringExtractionEnabled, false) ? "true" : "false");
-  }
-
   // Application-static: all worker tasks observe a fixed gather implementation.
   FLAGS_velox_arm_sve_gather_enabled =
       backendConf_->get<bool>("spark.gluten.sql.columnar.backend.velox.arm.sveGather.enabled", false);
