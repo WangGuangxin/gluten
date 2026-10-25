@@ -108,7 +108,7 @@ arrow::Result<int64_t> compressBuffer(
   if (FLAGS_gluten_shuffle_byte_lz4_enabled && codec->compression_type() == arrow::Compression::LZ4_FRAME &&
       byte_shuffle::eligible(buffer->data(), buffer->size())) {
     ARROW_RETURN_IF(outputLength < 32, arrow::Status::Invalid("Byte-plane shuffle header capacity"));
-    ARROW_ASSIGN_OR_RAISE(auto transformed, gluten::allocateResizableBuffer(buffer->size(), pool));
+    ARROW_ASSIGN_OR_RAISE(auto transformed, arrow::AllocateResizableBuffer(buffer->size(), pool));
     const bool neon = FLAGS_gluten_arm_neon_byte_shuffle_enabled;
     ARROW_RETURN_IF(
         !byte_shuffle::reorder<false>(buffer->data(), transformed->mutable_data(), buffer->size() / 8, 8, neon),
@@ -221,8 +221,7 @@ arrow::Status compressAndFlush(
   const int64_t extraHeader =
       FLAGS_gluten_shuffle_byte_lz4_enabled && codec->compression_type() == arrow::Compression::LZ4_FRAME ? 16 : 0;
   ARROW_ASSIGN_OR_RAISE(
-      auto compressed, arrow::AllocateResizableBuffer(sizeof(int64_t) * 2 + maxCompressedLength, pool));
-      auto compressed, gluten::allocateResizableBuffer(sizeof(int64_t) * 2 + extraHeader + maxCompressedLength, pool));
+      auto compressed, arrow::AllocateResizableBuffer(sizeof(int64_t) * 2 + extraHeader + maxCompressedLength, pool));
   auto output = compressed->mutable_data();
   ARROW_ASSIGN_OR_RAISE(
       auto compressedSize,
@@ -274,15 +273,15 @@ arrow::Result<std::shared_ptr<arrow::Buffer>> readCompressedBuffer(
         !codec || codec->compression_type() != arrow::Compression::LZ4_FRAME || width != 8 || uncompressedLength < 32 ||
             uncompressedLength % 8 != 0 || actualCompressed <= 0 || actualCompressed >= uncompressedLength - 16,
         arrow::Status::Invalid("Invalid byte-plane shuffle metadata"));
-    ARROW_ASSIGN_OR_RAISE(auto compressed, gluten::allocateResizableBuffer(actualCompressed, pool));
+    ARROW_ASSIGN_OR_RAISE(auto compressed, arrow::AllocateResizableBuffer(actualCompressed, pool));
     RETURN_NOT_OK(readExactly(inputStream, actualCompressed, compressed->mutable_data()));
     timer.switchTo(&decompressTime);
-    ARROW_ASSIGN_OR_RAISE(auto transformed, gluten::allocateResizableBuffer(uncompressedLength, pool));
+    ARROW_ASSIGN_OR_RAISE(auto transformed, arrow::AllocateResizableBuffer(uncompressedLength, pool));
     ARROW_ASSIGN_OR_RAISE(
         auto count,
         codec->Decompress(actualCompressed, compressed->data(), uncompressedLength, transformed->mutable_data()));
     ARROW_RETURN_IF(count != uncompressedLength, arrow::Status::Invalid("Byte-plane decoded length mismatch"));
-    ARROW_ASSIGN_OR_RAISE(auto output, gluten::allocateResizableBuffer(uncompressedLength, pool));
+    ARROW_ASSIGN_OR_RAISE(auto output, arrow::AllocateResizableBuffer(uncompressedLength, pool));
     const bool neon = FLAGS_gluten_arm_neon_byte_shuffle_enabled;
     ARROW_RETURN_IF(
         !byte_shuffle::reorder<true>(transformed->data(), output->mutable_data(), uncompressedLength / 8, 8, neon),
@@ -319,8 +318,8 @@ arrow::Result<std::shared_ptr<arrow::Buffer>> readCompressedBuffer(
     RETURN_NOT_OK(inputStream->Read(uncompressedLength, uncompressed->mutable_data()));
     return uncompressed;
   }
-  ARROW_ASSIGN_OR_RAISE(auto compressed, arrow::AllocateResizableBuffer(compressedLength, pool));
   ARROW_RETURN_IF(compressedLength <= 0, arrow::Status::Invalid("Unknown shuffle buffer marker"));
+  ARROW_ASSIGN_OR_RAISE(auto compressed, arrow::AllocateResizableBuffer(compressedLength, pool));
   RETURN_NOT_OK(inputStream->Read(compressedLength, compressed->mutable_data()));
 
   timer.switchTo(&decompressTime);
