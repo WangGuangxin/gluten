@@ -336,8 +336,16 @@ class CompressedInputStream : public arrow::io::InputStream {
   }
 
   arrow::Result<int64_t> Read(int64_t nbytes, void* out) override {
-    ScopedTimer timer(&decompressWallTime_);
     auto out_data = reinterpret_cast<uint8_t*>(out);
+    // Serve reads that fit in the decompressed buffer without timing them. The sort shuffle reader issues two small
+    // reads per row, and two steady_clock reads cost more than the copy (~30ns each on arm64, where the vDSO counter
+    // read is ordered by an ISB).
+    if (nbytes > 0 && decompressed_ && decompressed_->size() - decompressed_pos_ >= nbytes) {
+      const auto read = ReadFromDecompressed(nbytes, out_data);
+      total_pos_ += read;
+      return read;
+    }
+    ScopedTimer timer(&decompressWallTime_);
 
     int64_t total_read = 0;
     bool decompressor_has_data = true;

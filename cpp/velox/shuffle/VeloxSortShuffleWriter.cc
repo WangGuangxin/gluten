@@ -34,6 +34,8 @@ constexpr uint32_t kCompactRowIdPageLimit = 1U << 13;
 constexpr uint32_t kPartitionIdStartByteIndex = 5;
 constexpr uint32_t kPartitionIdEndByteIndex = 7;
 constexpr uint32_t kMaxPageNumber = (1 << 13) - 1; // 13-bit max = 8191
+// Rows of look-ahead when prefetching rows during partition eviction.
+constexpr size_t kEvictPrefetchDistance = 16;
 
 uint64_t toCompactRowId(uint32_t partitionId, uint32_t pageNumber, uint32_t offsetInPage) {
   // |63 partitionId(24) |39 inputIndex(13) |26 rowIndex(27) |
@@ -321,6 +323,14 @@ arrow::Status VeloxSortShuffleWriter::evictPartition(
 
   auto index = begin;
   while (index < end) {
+    // Rows are visited in partition order but stored in arrival order, so each row is a random access that the
+    // hardware prefetcher cannot predict. Prefetch a row a few iterations ahead to overlap the misses.
+    if (index + kEvictPrefetchDistance < end) {
+      const auto ahead = extractPageNumberAndOffset(arrayPtr_[index + kEvictPrefetchDistance]);
+      if (ahead.first < pageAddresses_.size()) {
+        __builtin_prefetch(pageAddresses_[ahead.first] + ahead.second);
+      }
+    }
     auto pageIndex = extractPageNumberAndOffset(arrayPtr_[index]);
     ARROW_RETURN_IF(
         pageIndex.first >= pageAddresses_.size(), arrow::Status::Invalid("Compact row ID references an unknown page."));
