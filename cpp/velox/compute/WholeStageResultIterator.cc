@@ -568,6 +568,9 @@ std::unordered_map<std::string, std::string> WholeStageResultIterator::getQueryC
       std::to_string(veloxCfg_->get<uint32_t>(kHashJoinAdaptiveValueIdsMinRows, 32768));
   configs[velox::core::QueryConfig::kHashJoinAdaptiveValueIdsMinDistinctPct] =
       std::to_string(veloxCfg_->get<uint32_t>(kHashJoinAdaptiveValueIdsMinDistinctPct, 80));
+  // Read from the backend conf, which forwards every backend-prefixed key without Scala registration.
+  configs[velox::core::QueryConfig::kOperatorTrackCpuUsage] =
+      VeloxBackend::get()->getBackendConf()->get<bool>(kOperatorTrackCpuUsage, true) ? "true" : "false";
   // Find batch size from Spark confs. If found, set the preferred and max batch size.
   configs[velox::core::QueryConfig::kPreferredOutputBatchRows] =
       std::to_string(veloxCfg_->get<uint32_t>(kSparkBatchSize, 4096));

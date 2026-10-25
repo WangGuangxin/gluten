@@ -193,6 +193,14 @@ void VeloxBackend::init(
     gflags::SetCommandLineOption("velox_arm_hash_table_prefetch_distance", std::to_string(distance).c_str());
   }
 
+  std::string valueIdPrefetchDistance;
+  if (gflags::GetCommandLineOption("velox_vector_hasher_value_id_prefetch_distance", &valueIdPrefetchDistance)) {
+    const auto distance = backendConf_->get<int32_t>(kVectorHasherValueIdPrefetchDistance, 0);
+    VELOX_CHECK_GE(distance, 0, "Value-ID prefetch distance must be non-negative");
+    gflags::SetCommandLineOption(
+        "velox_vector_hasher_value_id_prefetch_distance", std::to_string(distance).c_str());
+  }
+
   // Application-static: never mutate this flag from a task/query config.
   // This application-static option is present only in Velox branches with
   // batched string extraction. Set it by name when that feature is registered.

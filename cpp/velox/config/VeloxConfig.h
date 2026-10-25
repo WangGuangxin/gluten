@@ -46,6 +46,9 @@ const std::string kGroupingSetsValueIdsMaxStringValues =
 const std::string kGroupingSetsBatchingEnabled =
     "spark.gluten.sql.columnar.backend.velox.aggregation.groupingSetsBatching.enabled";
 const std::string kArmHashTablePrefetchDistance = "spark.gluten.sql.columnar.backend.velox.hashTable.prefetchDistance";
+// Rows of look-ahead for prefetching VectorHasher distinct-value table chunks; zero disables it.
+const std::string kVectorHasherValueIdPrefetchDistance =
+    "spark.gluten.sql.columnar.backend.velox.vectorHasher.valueIdPrefetchDistance";
 // memory
 const std::string kSpillStrategy = "spark.gluten.sql.columnar.backend.velox.spillStrategy";
 const std::string kSpillStrategyDefaultValue = "auto";
@@ -147,6 +150,10 @@ const bool kEnableUserExceptionStacktraceDefault = true;
 
 const std::string kRowContainerBatchStringExtractionEnabled =
     "spark.gluten.sql.columnar.backend.velox.rowContainer.batchStringExtraction.enabled";
+
+// Per-operator CPU timing reads CLOCK_THREAD_CPUTIME_ID around every operator call. That clock is
+// not served by the vDSO, so each read is a system call (~200ns on ARM Neoverse/Olympus).
+const std::string kOperatorTrackCpuUsage = "spark.gluten.sql.columnar.backend.velox.operatorTrackCpuUsage";
 
 const std::string kRowContainerStringEqualityEnabled =
     "spark.gluten.sql.columnar.backend.velox.rowContainer.stringEquality.enabled";
