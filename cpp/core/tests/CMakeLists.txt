@@ -23,3 +23,5 @@ add_test_case(arrow_memory_manager_reuse_test SOURCES ArrowMemoryManagerReuseTes
 add_test_case(lz4_frame_context_reuse_test SOURCES Lz4FrameContextReuseTest.cc)
 
 add_test_case(byte_shuffle_lz4_test SOURCES ByteShuffleLz4Test.cc)
+
+add_test_case(compressed_input_stream_test SOURCES CompressedInputStreamTest.cc)
