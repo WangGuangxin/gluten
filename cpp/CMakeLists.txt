@@ -191,9 +191,11 @@ if(NOT GLUTEN_PGO_MODE STREQUAL "OFF")
   velox_configure_pgo(GLUTEN)
 endif()
 
+# Same flags as Velox, including its distro-hardening-off flags; CXX lets the script probe them with
+# the compiler CMake uses.
 execute_process(
   COMMAND
-    bash -c
+    ${CMAKE_COMMAND} -E env CXX=${CMAKE_CXX_COMPILER} bash -c
     "( source ${VELOX_HOME}/scripts/setup-helper-functions.sh && echo -n $(get_cxx_flags $ENV{CPU_TARGET}))"
   OUTPUT_VARIABLE SCRIPT_CXX_FLAGS
   RESULT_VARIABLE COMMAND_STATUS)

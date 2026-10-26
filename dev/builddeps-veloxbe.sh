@@ -49,6 +49,13 @@ VELOX_PARAMETER=""
 BUILD_ARROW=ON
 BUILD_ARROW_EXPLICIT=OFF
 SPARK_VERSION=ALL
+# CPU target for aarch64: generic (-march=armv8-a+crc+crypto, the target of the release builds) or
+# local (tuned for the build host's CPU, e.g. -mcpu=neoverse-v2 or -mcpu=olympus).
+ARM_BUILD_TARGET=${ARM_BUILD_TARGET:-generic}
+# OFF turns off the hardening some distributions' compilers enable by default (Ubuntu/Debian GCC:
+# stack protector, _FORTIFY_SOURCE, stack clash protection), so builds match the release builds
+# regardless of the host compiler. See get_distro_hardening_off_flags and dev/check-native-libs.sh.
+KEEP_DISTRO_HARDENING=${VELOX_KEEP_DISTRO_HARDENING:-OFF}
 
 # set default number of threads as cpu cores minus 2
 if [[ "$(uname)" == "Darwin" ]]; then
@@ -163,12 +170,25 @@ do
         SPARK_VERSION="${arg#*=}"
         shift # Remove argument name from processing
         ;;
+        --arm_build_target=*)
+        ARM_BUILD_TARGET="${arg#*=}"
+        shift # Remove argument name from processing
+        ;;
+        --keep_distro_hardening=*)
+        KEEP_DISTRO_HARDENING="${arg#*=}"
+        shift # Remove argument name from processing
+        ;;
 	      *)
         OTHER_ARGUMENTS+=("$1")
         shift # Remove generic argument from processing
         ;;
     esac
 done
+
+# Read by get_cxx_flags / get_distro_hardening_off_flags in Velox and Gluten, the vcpkg triplets and
+# dev/check-native-libs.sh, for every dependency, Velox and Gluten compile below.
+export ARM_BUILD_TARGET
+export VELOX_KEEP_DISTRO_HARDENING=$KEEP_DISTRO_HARDENING
 
 function vcpkg_is_active {
     [ "$ENABLE_VCPKG" = "ON" ] || [ -n "${GLUTEN_VCPKG_ENABLED:-}" ]
@@ -319,6 +339,7 @@ function build_gluten_cpp {
 
   cmake -G Ninja "${GLUTEN_CMAKE_OPTIONS[@]}" ..
   ninja -j $NUM_THREADS
+  $GLUTEN_DIR/dev/check-native-libs.sh $GLUTEN_DIR/cpp/build/releases
 }
 
 function build_velox_backend {

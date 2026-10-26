@@ -15,6 +15,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Same as get_distro_hardening_off_flags in Velox's scripts/setup-helper-functions.sh: turns off the
+# hardening some distributions' compilers enable by default (Ubuntu/Debian GCC), unless
+# VELOX_KEEP_DISTRO_HARDENING=ON. Each flag is emitted only if ${CXX:-c++} accepts it.
+function get_distro_hardening_off_flags {
+  if [ "${VELOX_KEEP_DISTRO_HARDENING:-OFF}" = "ON" ]; then
+    return
+  fi
+  local FLAG
+  for FLAG in -fno-stack-protector -fno-stack-clash-protection -U_FORTIFY_SOURCE \
+    -fzero-init-padding-bits=standard; do
+    if echo 'int main() { return 0; }' |
+      ${CXX:-c++} -x c++ -Werror "${FLAG}" -fsyntax-only - >/dev/null 2>&1; then
+      echo -n "${FLAG} "
+    fi
+  done
+}
+
 function get_cxx_flags {
   local CPU_ARCH=$1
 
@@ -176,7 +193,7 @@ function cmake_install {
   CPU_TARGET="${CPU_TARGET:-unknown}"
   # EXTRA_CMAKE_CXX_FLAGS lets a caller append dependency-specific compiler flags
   # for a single cmake_install invocation without affecting other dependencies.
-  COMPILER_FLAGS="$(get_cxx_flags $CPU_TARGET) ${EXTRA_CMAKE_CXX_FLAGS:-}"
+  COMPILER_FLAGS="$(get_cxx_flags $CPU_TARGET) $(get_distro_hardening_off_flags) ${EXTRA_CMAKE_CXX_FLAGS:-}"
 
   local MACOS_ISOLATION_FLAGS=""
   if [[ "$(uname)" == "Darwin" ]]; then
