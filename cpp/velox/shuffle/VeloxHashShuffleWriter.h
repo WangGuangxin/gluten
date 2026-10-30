@@ -351,7 +351,20 @@ class VeloxHashShuffleWriter : public VeloxShuffleWriter {
 
   template <typename T>
   arrow::Status splitFixedType(const uint8_t* srcAddr, const std::vector<uint8_t*>& dstAddrs) {
-    for (auto& pid : partitionUsed_) {
+    // Each partition receives only a few rows per batch, and its write position was last touched a
+    // batch ago, so the stores miss. Prefetch for write the lines a later partition will fill.
+    constexpr size_t kPrefetchPartitions = 4;
+    constexpr uint32_t kMaxPrefetchLines = 4;
+    for (size_t i = 0; i < partitionUsed_.size(); ++i) {
+      if (i + kPrefetchPartitions < partitionUsed_.size()) {
+        const auto ahead = partitionUsed_[i + kPrefetchPartitions];
+        const auto* begin = dstAddrs[ahead] + partitionBufferBase_[ahead] * sizeof(T);
+        const auto bytes = partition2RowCount_[ahead] * sizeof(T);
+        for (uint32_t line = 0; line < kMaxPrefetchLines && line * 64 < bytes; ++line) {
+          __builtin_prefetch(begin + line * 64, 1, 3);
+        }
+      }
+      const auto pid = partitionUsed_[i];
       auto dstPidBase = reinterpret_cast<T*>(dstAddrs[pid] + partitionBufferBase_[pid] * sizeof(T));
       auto pos = partition2RowOffsetBase_[pid];
       auto end = partition2RowOffsetBase_[pid + 1];
