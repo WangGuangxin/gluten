@@ -79,6 +79,9 @@ class VeloxConfig(conf: SQLConf) extends GlutenConfig(conf) {
   def broadcastNestedLoopJoinFullOuterRewriteThreshold: Long =
     getConf(VELOX_BROADCAST_NESTED_LOOP_JOIN_FULL_OUTER_REWRITE_THRESHOLD)
 
+  def broadcastNestedLoopJoinJoinTypeRewriteEnabled: Boolean =
+    getConf(VELOX_BROADCAST_NESTED_LOOP_JOIN_JOIN_TYPE_REWRITE_ENABLED)
+
   def optimizeSortMergeJoinStreamedSide: Boolean =
     getConf(SORT_MERGE_JOIN_OPTIMIZE_STREAMED_SIDE)
 
@@ -282,11 +285,26 @@ object VeloxConfig extends ConfigRegistry {
       "spark.gluten.sql.columnar.backend.velox.broadcastNLJ.fullOuterRewriteThreshold")
       .doc(
         "Maximum per-side plan size in bytes for rewriting a full outer broadcast nested loop " +
-          "join into a left outer join and an existence join followed by union. The rewrite is " +
-          "applied only when both sides have known statistics and each side is at or below this " +
-          "threshold. Set to -1 to disable the rewrite.")
+          "join into a left outer join and an existence join followed by union. When a " +
+          "predicate of the join condition references both sides, the rewrite broadcasts the " +
+          "originally streamed side, and is applied only when both sides have known statistics " +
+          "and each side is at or below this threshold. Otherwise the existence join only needs " +
+          "one streamed row that passes the streamed side predicates, and the threshold does " +
+          "not apply. Set to -1 to disable the rewrite.")
       .bytesConf(ByteUnit.BYTE)
       .createWithDefaultString("10MB")
+
+  val VELOX_BROADCAST_NESTED_LOOP_JOIN_JOIN_TYPE_REWRITE_ENABLED =
+    buildConf("spark.gluten.sql.columnar.backend.velox.broadcastNLJ.joinTypeRewrite.enabled")
+      .doc(
+        "Rewrite broadcast nested loop joins whose join type and build side Velox cannot run " +
+          "into joins it can run. A left semi or left anti join that builds the right side " +
+          "becomes an existence join followed by a filter. A left outer join that builds the " +
+          "left side, or a right outer join that builds the right side, becomes an inner join " +
+          "plus the unmatched build side rows, when no predicate of the join condition " +
+          "references both sides.")
+      .booleanConf
+      .createWithDefault(true)
 
   val SORT_MERGE_JOIN_OPTIMIZE_STREAMED_SIDE =
     buildConf("spark.gluten.sql.columnar.backend.velox.sortMergeJoin.optimizeStreamedSide")
