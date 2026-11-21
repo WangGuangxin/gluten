@@ -453,13 +453,19 @@ abstract class HashAggregateExecTransformer(
           // exprId.
           // 2. After apply `PullOutPreProject`, the aggregate expression may be created a new
           // instance.
-          val attrsWithSameName =
-            originalInputAttributes.drop(groupingExpressions.size).collect {
-              case a if a.name == attr.name => a
-            }
-          val aggBufferAttrsWithSameName = aggregateExpressions.toIndexedSeq
+          // Only PartialMerge/Final aggregates read buffers from the child, and the child
+          // places those buffers after its grouping (and distinct) columns. Partial/Complete
+          // aggregates in the same node (e.g. `partial_count(distinct x)` next to `merge_avg`)
+          // must be excluded, otherwise buffer names like `count` are counted twice.
+          val mergeBufferAttrs = aggregateExpressions.toIndexedSeq
+            .filter(e => e.mode == PartialMerge || e.mode == Final)
             .flatMap(_.aggregateFunction.inputAggBufferAttributes)
-            .filter(_.name == attr.name)
+          val attrsWithSameName =
+            originalInputAttributes
+              .drop(groupingExpressions.size)
+              .takeRight(mergeBufferAttrs.size)
+              .collect { case a if a.name == attr.name => a }
+          val aggBufferAttrsWithSameName = mergeBufferAttrs.filter(_.name == attr.name)
           assert(
             attrsWithSameName.size == aggBufferAttrsWithSameName.size,
             "The attribute with the same name in final agg inputAggBufferAttribute must" +
