@@ -18,42 +18,79 @@ package org.apache.gluten.extension
 
 import org.apache.gluten.config.VeloxConfig
 
-import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, AttributeReference, Expression, Literal, Not}
+import org.apache.spark.sql.catalyst.expressions.{Alias, And, Attribute, AttributeReference, Expression, Literal, Not, PredicateHelper}
 import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight}
-import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, FullOuter, LeftOuter}
+import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, FullOuter, Inner, LeftAnti, LeftOuter, LeftSemi, RightOuter}
 import org.apache.spark.sql.catalyst.plans.logical.Join
 import org.apache.spark.sql.catalyst.plans.physical.IdentityBroadcastMode
 import org.apache.spark.sql.catalyst.rules.Rule
-import org.apache.spark.sql.execution.{FilterExec, ProjectExec, SparkPlan, UnionExec}
+import org.apache.spark.sql.execution.{ColumnarInputAdapter, FilterExec, InputIteratorTransformer, LocalLimitExec, ProjectExec, SparkPlan, UnionExec}
 import org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, BroadcastExchangeLike, ReusedExchangeExec}
-import org.apache.spark.sql.execution.joins.BroadcastNestedLoopJoinExec
+import org.apache.spark.sql.execution.joins.{BaseJoinExec, BroadcastNestedLoopJoinExec}
 import org.apache.spark.sql.types.BooleanType
 
 /**
- * Rewrites `BroadcastNestedLoopJoinExec(FullOuter)` into a union of two nested-loop joins that
- * Velox already supports natively:
- *   1. left outer join to produce matches plus unmatched streamed-side rows
- *   2. an existence join, with the original broadcast side streamed, to identify its unmatched rows
+ * Rewrites `BroadcastNestedLoopJoinExec` join shapes that Velox cannot run into nested loop joins
+ * it supports natively. Velox runs inner, left outer and existence joins with the broadcast side as
+ * the build side. Every task sees only one partition of the streamed side, so a task cannot tell
+ * whether a broadcast row has a match in another partition.
+ *
+ * A join that must keep unmatched broadcast rows, i.e. a full outer join, a left outer join that
+ * builds the left side or a right outer join that builds the right side, becomes a union of
+ *   1. a nested loop join with the same build side that produces the matches, plus unmatched
+ *      streamed rows for a full outer join
+ *   2. an existence join that streams the broadcast side and keeps its unmatched rows.
+ *
+ * When no conjunct of the join condition references both sides, whether a broadcast row matches
+ * depends only on that row and on whether any streamed row passes the streamed side conjuncts. The
+ * existence join then probes a broadcast of at most one such row per streamed partition. Otherwise
+ * it probes a broadcast of the whole streamed side, which is done only for a full outer join with
+ * both sides below `broadcastNLJ.fullOuterRewriteThreshold`.
+ *
+ * A left semi or left anti join that builds the right side becomes an existence join followed by a
+ * filter and a projection.
  */
-case class VeloxBroadcastNestedLoopJoinRewriteRule() extends Rule[SparkPlan] {
+case class VeloxBroadcastNestedLoopJoinRewriteRule() extends Rule[SparkPlan] with PredicateHelper {
   override def apply(plan: SparkPlan): SparkPlan = {
-    val threshold = VeloxConfig.get.broadcastNestedLoopJoinFullOuterRewriteThreshold
-    if (threshold < 0) {
+    val conf = VeloxConfig.get
+    val fullOuterThreshold = conf.broadcastNestedLoopJoinFullOuterRewriteThreshold
+    val joinTypeRewriteEnabled = conf.broadcastNestedLoopJoinJoinTypeRewriteEnabled
+    if (fullOuterThreshold < 0 && !joinTypeRewriteEnabled) {
       plan
     } else {
       plan.transformUp {
         case bnlj: BroadcastNestedLoopJoinExec
-            if bnlj.joinType == FullOuter &&
-              childDeterministic(bnlj.left) &&
-              childDeterministic(bnlj.right) &&
-              shouldRewriteFullOuter(
-                bnlj,
-                threshold) && conditionOffloadable(bnlj) && broadcastSideRelocatable(bnlj) =>
-          rewriteFullOuter(bnlj)
+            if bnlj.joinType == FullOuter && fullOuterThreshold >= 0 && canDuplicateSides(bnlj) =>
+          rewriteFullOuter(bnlj, fullOuterThreshold).getOrElse(bnlj)
+        case bnlj: BroadcastNestedLoopJoinExec
+            if joinTypeRewriteEnabled && keepsUnmatchedBuildRowsOnly(bnlj) &&
+              canDuplicateSides(bnlj) && !isCorrelated(bnlj) =>
+          rewriteBuildSideOuter(bnlj)
+        case bnlj: BroadcastNestedLoopJoinExec
+            if joinTypeRewriteEnabled && bnlj.buildSide == BuildRight &&
+              (bnlj.joinType == LeftSemi || bnlj.joinType == LeftAnti) =>
+          rewriteSemiOrAnti(bnlj)
       }
     }
   }
+
+  /** A left outer join that builds the left side or a right outer join that builds the right. */
+  private def keepsUnmatchedBuildRowsOnly(bnlj: BroadcastNestedLoopJoinExec): Boolean =
+    (bnlj.joinType, bnlj.buildSide) match {
+      case (LeftOuter, BuildLeft) | (RightOuter, BuildRight) => true
+      case _ => false
+    }
+
+  /**
+   * The rewrites of outer joins evaluate both sides and the join condition twice, so they must
+   * produce the same rows each time, and the broadcast side must be usable as a streamed input.
+   */
+  private def canDuplicateSides(bnlj: BroadcastNestedLoopJoinExec): Boolean =
+    childDeterministic(bnlj.left) &&
+      childDeterministic(bnlj.right) &&
+      bnlj.condition.forall(_.deterministic) &&
+      broadcastSideRelocatable(bnlj)
 
   // Query stages are leaf nodes, so inspect the encapsulated broadcast plan as well.
   private def childDeterministic(plan: SparkPlan): Boolean =
@@ -62,48 +99,81 @@ case class VeloxBroadcastNestedLoopJoinRewriteRule() extends Rule[SparkPlan] {
       case _ => true
     })
 
+  private def buildPlan(bnlj: BroadcastNestedLoopJoinExec): SparkPlan = bnlj.buildSide match {
+    case BuildLeft => bnlj.left
+    case BuildRight => bnlj.right
+  }
+
+  private def streamedPlan(bnlj: BroadcastNestedLoopJoinExec): SparkPlan = bnlj.buildSide match {
+    case BuildLeft => bnlj.right
+    case BuildRight => bnlj.left
+  }
+
   /**
-   * The rewrite reuses the original broadcast side in two roles at once: [[rewriteFullOuter]] keeps
-   * it as the build (broadcast) side of `branchA`, while [[buildUnmatchedBroadcastSide]] calls
-   * [[unwrapBroadcast]] on it and consumes the unwrapped subtree as a normal STREAMED input of
-   * `branchB`. That is only safe when the broadcast side can be cleanly re-materialized as a
+   * Whether a conjunct of the join condition references both sides. If none does, the condition is
+   * a conjunction of build side, streamed side and constant predicates.
+   */
+  private def isCorrelated(bnlj: BroadcastNestedLoopJoinExec): Boolean =
+    bnlj.condition.exists {
+      cond =>
+        splitConjunctivePredicates(cond).exists {
+          pred =>
+            pred.references.exists(bnlj.left.outputSet.contains) &&
+            pred.references.exists(bnlj.right.outputSet.contains)
+        }
+    }
+
+  /**
+   * The rewrite reuses the original broadcast side in two roles at once: it stays the build
+   * (broadcast) side of the join producing matches, while [[buildUnmatchedBroadcastSide]] calls
+   * [[unwrapBroadcast]] on it and consumes the unwrapped subtree as a normal STREAMED input of the
+   * existence join. That is only safe when the broadcast side can be cleanly re-materialized as a
    * partitioned plan. Reject the rewrite otherwise, e.g. for the MERGE cardinality-check join (`ON
    * t.pk > s.pk` with an `autoBroadcastJoinThreshold = -1` broadcast of a reused `Union` source):
    * there the broadcast side does not unwrap to a plain partitioned subtree, so after the rewrite a
-   * `ColumnarBroadcastExchangeExec` ends up in `branchB`'s streamed slot and is executed via
-   * `ColumnarInputAdapter.doExecuteColumnar -> executeColumnar()`, which the broadcast exchange
+   * `ColumnarBroadcastExchangeExec` ends up in the existence join's streamed slot and is executed
+   * via `ColumnarInputAdapter.doExecuteColumnar -> executeColumnar()`, which the broadcast exchange
    * does not support, crashing with `[INTERNAL_ERROR] ... has column support mismatch`.
    *
    * A broadcast side is considered relocatable only when:
    *   - it is an exclusively-owned broadcast, i.e. NOT a [[ReusedExchangeExec]] (a reused/shared
    *     exchange must not be turned into a streamed input); and
-   *   - its unwrapped payload does not itself contain a nested broadcast, which would otherwise
-   *     leak into the streamed position of `branchB`.
+   *   - every broadcast inside its unwrapped payload is the build side of a nested join. Such a
+   *     broadcast is consumed through `executeBroadcast` wherever the subtree runs. A broadcast in
+   *     any other position, including the payload root, would otherwise leak into the streamed
+   *     position of the existence join.
    */
-  private def broadcastSideRelocatable(bnlj: BroadcastNestedLoopJoinExec): Boolean = {
-    val broadcastSide = bnlj.buildSide match {
-      case BuildLeft => bnlj.left
-      case BuildRight => bnlj.right
-    }
-    isCleanRelocatableBroadcast(broadcastSide)
-  }
+  private def broadcastSideRelocatable(bnlj: BroadcastNestedLoopJoinExec): Boolean =
+    isCleanRelocatableBroadcast(buildPlan(bnlj))
 
   private def isCleanRelocatableBroadcast(plan: SparkPlan): Boolean = plan match {
     case stage: BroadcastQueryStageExec => isCleanRelocatableBroadcast(stage.plan)
     case _: ReusedExchangeExec => false
-    case exchange: BroadcastExchangeLike => !containsBroadcast(exchange.child)
+    case exchange: BroadcastExchangeLike => broadcastsOnlyFeedJoins(exchange.child)
     case _ => false
   }
 
-  private def containsBroadcast(plan: SparkPlan): Boolean =
-    plan.exists {
-      case _: BroadcastExchangeLike => true
-      case _: BroadcastQueryStageExec => true
-      case _: ReusedExchangeExec => true
-      case _ => false
-    }
+  private def isBroadcastLike(plan: SparkPlan): Boolean = plan match {
+    case _: BroadcastExchangeLike | _: BroadcastQueryStageExec | _: ReusedExchangeExec => true
+    case _ => false
+  }
 
-  private def shouldRewriteFullOuter(
+  // A columnar join inside a whole stage transformer reads its broadcast build side through these.
+  private def joinInput(plan: SparkPlan): SparkPlan = plan match {
+    case input: InputIteratorTransformer => joinInput(input.child)
+    case adapter: ColumnarInputAdapter => joinInput(adapter.child)
+    case other => other
+  }
+
+  private def broadcastsOnlyFeedJoins(plan: SparkPlan): Boolean = plan match {
+    case join: BaseJoinExec =>
+      join.children.forall {
+        child => isBroadcastLike(joinInput(child)) || broadcastsOnlyFeedJoins(child)
+      }
+    case other => !isBroadcastLike(other) && other.children.forall(broadcastsOnlyFeedJoins)
+  }
+
+  private def shouldBroadcastStreamedSide(
       bnlj: BroadcastNestedLoopJoinExec,
       threshold: Long): Boolean = {
     bnlj.logicalLink.collect {
@@ -114,78 +184,120 @@ case class VeloxBroadcastNestedLoopJoinRewriteRule() extends Rule[SparkPlan] {
     }.getOrElse(false)
   }
 
-  private def conditionOffloadable(bnlj: BroadcastNestedLoopJoinExec): Boolean =
-    bnlj.condition.exists {
-      cond =>
-        cond.references.exists(bnlj.left.outputSet.contains) &&
-        cond.references.exists(bnlj.right.outputSet.contains)
+  /**
+   * The broadcast relation the existence join probes to find unmatched rows of the original build
+   * side, or None if the rewrite does not apply.
+   */
+  private def unmatchedProbe(
+      bnlj: BroadcastNestedLoopJoinExec,
+      threshold: Long): Option[SparkPlan] =
+    if (!isCorrelated(bnlj)) {
+      Some(firstQualifyingStreamedRow(bnlj))
+    } else if (shouldBroadcastStreamedSide(bnlj, threshold)) {
+      Some(ensureBroadcast(unwrapBroadcast(streamedPlan(bnlj))))
+    } else {
+      None
     }
 
-  private def rewriteFullOuter(bnlj: BroadcastNestedLoopJoinExec): SparkPlan = {
-    val matchesAndStreamedUnmatched = bnlj.buildSide match {
-      case BuildRight =>
-        projectToOutput(
-          BroadcastNestedLoopJoinExec(
-            bnlj.left,
-            bnlj.right,
-            BuildRight,
-            LeftOuter,
-            bnlj.condition),
-          bnlj.output)
-      case BuildLeft =>
-        projectToOutput(
-          BroadcastNestedLoopJoinExec(
-            bnlj.right,
-            bnlj.left,
-            BuildRight,
-            LeftOuter,
-            bnlj.condition),
-          bnlj.output)
+  /**
+   * Broadcasts at most one row per streamed partition that passes the streamed side conjuncts. With
+   * an uncorrelated condition, a build row matches some streamed row exactly when it matches any
+   * such row, because the remaining conjuncts do not depend on the streamed row.
+   */
+  private def firstQualifyingStreamedRow(bnlj: BroadcastNestedLoopJoinExec): SparkPlan = {
+    val streamed = unwrapBroadcast(streamedPlan(bnlj))
+    val streamedPredicates = bnlj.condition.toSeq.flatMap(splitConjunctivePredicates).filter {
+      pred => pred.references.nonEmpty && pred.references.subsetOf(streamed.outputSet)
     }
+    val filtered = streamedPredicates.reduceOption(And) match {
+      case Some(pred) => FilterExec(pred, streamed)
+      case None => streamed
+    }
+    ensureBroadcast(LocalLimitExec(1, filtered))
+  }
 
-    val unmatchedBroadcastRows = bnlj.buildSide match {
+  private def rewriteFullOuter(
+      bnlj: BroadcastNestedLoopJoinExec,
+      threshold: Long): Option[SparkPlan] = {
+    unmatchedProbe(bnlj, threshold).map {
+      probe =>
+        val matchesAndStreamedUnmatched = bnlj.buildSide match {
+          case BuildRight =>
+            projectToOutput(
+              BroadcastNestedLoopJoinExec(
+                bnlj.left,
+                bnlj.right,
+                BuildRight,
+                LeftOuter,
+                bnlj.condition),
+              bnlj.output)
+          case BuildLeft =>
+            projectToOutput(
+              BroadcastNestedLoopJoinExec(
+                bnlj.right,
+                bnlj.left,
+                BuildRight,
+                LeftOuter,
+                bnlj.condition),
+              bnlj.output)
+        }
+        unionToOutput(matchesAndStreamedUnmatched, unmatchedBuildRows(bnlj, probe), bnlj.output)
+    }
+  }
+
+  private def rewriteBuildSideOuter(bnlj: BroadcastNestedLoopJoinExec): SparkPlan = {
+    val matches = projectToOutput(
+      BroadcastNestedLoopJoinExec(bnlj.left, bnlj.right, bnlj.buildSide, Inner, bnlj.condition),
+      bnlj.output)
+    unionToOutput(matches, unmatchedBuildRows(bnlj, firstQualifyingStreamedRow(bnlj)), bnlj.output)
+  }
+
+  private def rewriteSemiOrAnti(bnlj: BroadcastNestedLoopJoinExec): SparkPlan = {
+    val existsAttr = AttributeReference("__gluten_bnlj_exists", BooleanType, nullable = false)()
+    val existenceJoin = BroadcastNestedLoopJoinExec(
+      bnlj.left,
+      bnlj.right,
+      BuildRight,
+      ExistenceJoin(existsAttr),
+      bnlj.condition)
+    val predicate = if (bnlj.joinType == LeftSemi) existsAttr else Not(existsAttr)
+    ProjectExec(bnlj.left.output, FilterExec(predicate, existenceJoin))
+  }
+
+  private def unmatchedBuildRows(bnlj: BroadcastNestedLoopJoinExec, probe: SparkPlan): SparkPlan =
+    bnlj.buildSide match {
       case BuildRight =>
         buildUnmatchedBroadcastSide(
           unmatchedSide = bnlj.right,
-          otherSide = bnlj.left,
+          otherSideOutputSize = bnlj.left.output.size,
+          probe = probe,
           unmatchedSideIsLeft = false,
           condition = bnlj.condition,
-          output = bnlj.output)
+          output = bnlj.output
+        )
       case BuildLeft =>
         buildUnmatchedBroadcastSide(
           unmatchedSide = bnlj.left,
-          otherSide = bnlj.right,
+          otherSideOutputSize = bnlj.right.output.size,
+          probe = probe,
           unmatchedSideIsLeft = true,
           condition = bnlj.condition,
           output = bnlj.output)
     }
 
-    val union = UnionExec(Seq(matchesAndStreamedUnmatched, unmatchedBroadcastRows))
-    ProjectExec(
-      union.output.zip(bnlj.output).map {
-        case (childAttr, targetAttr) =>
-          Alias(childAttr, targetAttr.name)(
-            exprId = targetAttr.exprId,
-            qualifier = targetAttr.qualifier,
-            explicitMetadata = Some(targetAttr.metadata))
-      },
-      union
-    )
-  }
-
   private def buildUnmatchedBroadcastSide(
       unmatchedSide: SparkPlan,
-      otherSide: SparkPlan,
+      otherSideOutputSize: Int,
+      probe: SparkPlan,
       unmatchedSideIsLeft: Boolean,
       condition: Option[Expression],
       output: Seq[Attribute]): SparkPlan = {
     val unmatchedSideBase = unwrapBroadcast(unmatchedSide)
-    val otherSideBase = unwrapBroadcast(otherSide)
     val existsAttr =
       AttributeReference("__gluten_bnlj_exists", BooleanType, nullable = false)()
     val unmatchedJoin = BroadcastNestedLoopJoinExec(
       unmatchedSideBase,
-      ensureBroadcast(otherSideBase),
+      probe,
       BuildRight,
       ExistenceJoin(existsAttr),
       condition)
@@ -199,13 +311,25 @@ case class VeloxBroadcastNestedLoopJoinRewriteRule() extends Rule[SparkPlan] {
       }
     } else {
       output.zipWithIndex.map {
-        case (targetAttr, idx) if idx < otherSide.output.size =>
+        case (targetAttr, idx) if idx < otherSideOutputSize =>
           nullAliasFor(targetAttr)
         case (targetAttr, idx) =>
-          aliasTo(unmatchedSideBase.output(idx - otherSide.output.size), targetAttr)
+          aliasTo(unmatchedSideBase.output(idx - otherSideOutputSize), targetAttr)
       }
     }
     ProjectExec(projected, unmatchedOnly)
+  }
+
+  private def unionToOutput(
+      matches: SparkPlan,
+      unmatched: SparkPlan,
+      output: Seq[Attribute]): SparkPlan = {
+    val union = UnionExec(Seq(matches, unmatched))
+    ProjectExec(
+      union.output.zip(output).map {
+        case (childAttr, targetAttr) => aliasTo(childAttr, targetAttr)
+      },
+      union)
   }
 
   private def unwrapBroadcast(plan: SparkPlan): SparkPlan = plan match {
