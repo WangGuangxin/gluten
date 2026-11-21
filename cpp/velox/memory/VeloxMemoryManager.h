@@ -103,6 +103,9 @@ class VeloxMemoryManager final : public MemoryManager {
  private:
   bool tryDestructSafe();
 
+  // Keeps the remaining memory resources alive forever, for when they can't be destructed safely.
+  void leakOutstandingResources();
+
   std::unique_ptr<AllocationListener> listener_;
   std::unique_ptr<AllocationListener> blockListener_;
 
