@@ -440,10 +440,36 @@ bool VeloxMemoryManager::tryDestructSafe() {
   return true;
 }
 
+void VeloxMemoryManager::leakOutstandingResources() {
+  // Destructing a memory pool that still has reservations fails the check in ListenableArbitrator::removePool. As
+  // that happens in a destructor, the process is terminated. The code holding the reservations, e.g. a task still
+  // running while the backend shuts down, may also still use the pools and the allocation listeners. So move them
+  // into an object that is intentionally never destructed.
+  struct LeakedResources {
+    std::unique_ptr<AllocationListener> listener;
+    std::unique_ptr<AllocationListener> blockListener;
+    std::shared_ptr<ArrowMemoryPool> defaultArrowPool;
+    std::unique_ptr<velox::memory::MemoryManager> veloxMemoryManager;
+    std::shared_ptr<velox::memory::MemoryPool> veloxAggregatePool;
+    std::shared_ptr<velox::memory::MemoryPool> veloxLeafPool;
+    std::vector<std::shared_ptr<velox::memory::MemoryPool>> heldVeloxPools;
+  };
+  [[maybe_unused]] auto* leaked = new LeakedResources{
+      std::move(listener_),
+      std::move(blockListener_),
+      std::move(defaultArrowPool_),
+      std::move(veloxMemoryManager_),
+      std::move(veloxAggregatePool_),
+      std::move(veloxLeafPool_),
+      std::move(heldVeloxPools_)};
+}
+
 VeloxMemoryManager::~VeloxMemoryManager() {
   bool destructed = tryDestructSafe();
   if (!destructed) {
-    LOG(ERROR) << "Failed to release Velox memory manager as there are still outstanding memory resources. ";
+    LOG(ERROR) << "Failed to release Velox memory manager as there are still outstanding memory resources. "
+               << "Leaking them instead of destructing memory pools that are still in use.";
+    leakOutstandingResources();
   }
 #ifdef ENABLE_JEMALLOC_STATS
   malloc_stats_print(nullptr, nullptr, nullptr);

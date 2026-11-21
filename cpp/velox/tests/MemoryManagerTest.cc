@@ -15,6 +15,8 @@
  * limitations under the License.
  */
 
+#include <cstring>
+
 #include "compute/VeloxBackend.h"
 #include "config/VeloxConfig.h"
 #include "memory/VeloxMemoryManager.h"
@@ -130,6 +132,16 @@ TEST_F(MemoryManagerTest, memoryAllocatorWithBlockReservation) {
   EXPECT_EQ(listener_->currentBytes(), initBytes);
 
   ASSERT_EQ(allocator_->getBytes(), 0);
+}
+
+TEST_F(MemoryManagerTest, destructWithOutstandingAllocation) {
+  // A task can still hold memory when the memory manager is destructed, e.g. when the backend shuts down while the
+  // task is running. The destruction must not terminate the process, and the memory must stay usable.
+  auto* pool = vmm_->getLeafMemoryPool().get();
+  void* buffer = pool->allocate(kMB);
+  vmm_.reset();
+  std::memset(buffer, 1, kMB);
+  pool->free(buffer, kMB);
 }
 
 namespace {
