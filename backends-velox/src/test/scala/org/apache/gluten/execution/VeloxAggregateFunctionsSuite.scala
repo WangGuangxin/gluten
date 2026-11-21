@@ -21,7 +21,7 @@ import org.apache.gluten.extension.columnar.validator.FallbackInjects
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.catalyst.expressions.aggregate.{Final, Partial, PartialMerge}
-import org.apache.spark.sql.execution.aggregate.BaseAggregateExec
+import org.apache.spark.sql.execution.aggregate.{BaseAggregateExec, ObjectHashAggregateExec}
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeLike
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
@@ -924,6 +924,48 @@ abstract class VeloxAggregateFunctionsSuite extends VeloxWholeStageTransformerSu
                 plan.isInstanceOf[HashAggregateExecTransformer]
               }) == 4)
         }
+    }
+  }
+
+  testWithMinSparkVersion("string_agg / listagg without ordering is offloaded", "4.0") {
+    import testImplicits._
+
+    withTempView("listagg_tmp") {
+      // Each group has at most one distinct non-null value so the concatenation order is
+      // deterministic; group 2 has only nulls and must yield NULL.
+      Seq((1, "a"), (1, null), (1, "a"), (2, null), (2, null), (3, "b"))
+        .toDF("c1", "c2")
+        .createOrReplaceTempView("listagg_tmp")
+
+      runQueryAndCompare("""
+                           |SELECT c1,
+                           |  string_agg(c2, ', '),
+                           |  listagg(c2),
+                           |  string_agg(DISTINCT c2, '|'),
+                           |  string_agg(c2, '-') FILTER (WHERE c2 IS NOT NULL),
+                           |  concat('[', string_agg(c2, ','), ']')
+                           |FROM listagg_tmp GROUP BY c1
+                           |""".stripMargin) {
+        df =>
+          assert(getExecutedPlan(df).exists(_.isInstanceOf[HashAggregateExecTransformer]))
+          assert(getExecutedPlan(df).forall(!_.isInstanceOf[ObjectHashAggregateExec]))
+      }
+
+      // Multiple values per group: compare the sorted elements, as the order is not defined.
+      runQueryAndCompare("""
+                           |SELECT array_sort(split(string_agg(c2, ','), ','))
+                           |FROM listagg_tmp
+                           |""".stripMargin) {
+        df => assert(getExecutedPlan(df).forall(!_.isInstanceOf[ObjectHashAggregateExec]))
+      }
+
+      // Ordered listagg is not rewritten, and still returns the correct result.
+      runQueryAndCompare("""
+                           |SELECT listagg(c2, ',') WITHIN GROUP (ORDER BY c2)
+                           |FROM listagg_tmp
+                           |""".stripMargin) {
+        df => assert(getExecutedPlan(df).exists(_.isInstanceOf[ObjectHashAggregateExec]))
+      }
     }
   }
 
