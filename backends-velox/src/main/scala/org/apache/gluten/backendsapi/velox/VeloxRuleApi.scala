@@ -109,6 +109,7 @@ object VeloxRuleApi {
       Seq(
         RewriteIn,
         RewriteMultiChildrenCount,
+        RewriteWindowAggregateFilter,
         RewriteJoin,
         PullOutPreProject,
         PullOutPostProject,
