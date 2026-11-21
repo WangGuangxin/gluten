@@ -46,6 +46,12 @@ object GlutenExplainUtils extends AdaptiveSparkPlanHelper {
   type FallbackInfo = (Int, Map[String, String])
 
   /**
+   * Reason shown for a vanilla Spark operator without any recorded fallback reason, e.g. one in a
+   * part of an adaptive plan that has not been planned yet.
+   */
+  val NoFallbackReasonRecorded = "Gluten does not touch it or does not support it"
+
+  /**
    * Returns whether a plan should be ignored when collecting fallback statistics.
    *
    * Such plans may be execution-framework or implementation wrappers.
@@ -107,7 +113,7 @@ object GlutenExplainUtils extends AdaptiveSparkPlanHelper {
         val reason = FallbackTags
           .getOption(p)
           .map(_.reason())
-          .getOrElse("Gluten does not touch it or does not support it")
+          .getOrElse(NoFallbackReasonRecorded)
         addFallbackNodeWithReason(p, reason, fallbackNodeToReason)
     }
   }
@@ -134,7 +140,7 @@ object GlutenExplainUtils extends AdaptiveSparkPlanHelper {
         .getOption(p)
         .orElse(p.logicalLink.flatMap(FallbackTags.getOption))
         .map(_.reason())
-        .getOrElse("Gluten does not touch it or does not support it")
+        .getOrElse(NoFallbackReasonRecorded)
 
     def visit(tmp: QueryPlan[_]): Unit = {
       tmp.foreachUp {
