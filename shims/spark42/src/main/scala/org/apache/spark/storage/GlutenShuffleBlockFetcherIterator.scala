@@ -231,10 +231,37 @@ final class GlutenShuffleBlockFetcherIterator(
     }
   }
 
+  /**
+   * Native file segment streams handed out by next(). Their descriptors are not reclaimed by GC, so
+   * any the consumer did not close are closed in cleanup().
+   */
+  @GuardedBy("this")
+  private[this] val segmentStreams = new java.util.ArrayList[GlutenNativeFileSegmentInputStream]()
+
+  private[this] def trackSegmentStream(in: InputStream): InputStream = {
+    in match {
+      case s: GlutenNativeFileSegmentInputStream =>
+        synchronized {
+          if (segmentStreams.size() >= 256) {
+            segmentStreams.removeIf(_.isClosed)
+          }
+          segmentStreams.add(s)
+          if (isZombie) {
+            // cleanup() already ran.
+            s.close()
+          }
+        }
+      case _ =>
+    }
+    in
+  }
+
   /** Mark the iterator as zombie, and release all buffers that haven't been deserialized yet. */
   private[storage] def cleanup(): Unit = {
     synchronized {
       isZombie = true
+      segmentStreams.forEach(_.close())
+      segmentStreams.clear()
     }
     // Release all current result buffers from all threads
     while (!currentResults.isEmpty) {
@@ -651,7 +678,7 @@ final class GlutenShuffleBlockFetcherIterator(
     while (iter.hasNext) {
       val (blockId, mapIndex) = iter.next()
       try {
-        val buf = blockManager.getLocalBlockData(blockId)
+        val buf = GlutenLocalShuffleBlocks.getLocalBlockData(blockManager, blockId)
         shuffleMetrics.incLocalBlocksFetched(1)
         shuffleMetrics.incLocalBytesRead(buf.size)
         buf.retain()
@@ -965,7 +992,11 @@ final class GlutenShuffleBlockFetcherIterator(
             }
           } else {
             try {
-              val bufIn = buf.createInputStream()
+              val bufIn = buf match {
+                case segment: FileSegmentManagedBuffer =>
+                  trackSegmentStream(GlutenLocalShuffleBlocks.openFileSegment(segment))
+                case _ => buf.createInputStream()
+              }
               if (checksumEnabled) {
                 val checksum = ShuffleChecksumHelper.getChecksumByAlgorithm(checksumAlgorithm)
                 checkedIn = new CheckedInputStream(bufIn, checksum)
