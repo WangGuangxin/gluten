@@ -19,6 +19,8 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <thread>
+#include <vector>
 
 using namespace gluten;
 
@@ -61,4 +63,41 @@ TEST(StdMemoryAllocator, shrinkKeepsAlignment) {
     ASSERT_TRUE(allocator.free(shrunk, newSize));
     ASSERT_EQ(allocator.getBytes(), 0);
   }
+}
+
+TEST(StdMemoryAllocator, concurrentAccounting) {
+  StdMemoryAllocator allocator;
+  constexpr int kNumThreads = 128;
+  constexpr int kNumIterations = 1000;
+  constexpr int64_t kSize = 256;
+  // Every thread keeps one buffer per thread index alive so that the total is known while the threads run, and
+  // frees and allocates it repeatedly. Threads are assigned to counter stripes round-robin; with more threads than
+  // stripes, several threads share each stripe.
+  std::vector<std::thread> threads;
+  std::vector<void*> kept(kNumThreads, nullptr);
+  for (int t = 0; t < kNumThreads; ++t) {
+    threads.emplace_back([&, t]() {
+      for (int i = 0; i < kNumIterations; ++i) {
+        void* buf = nullptr;
+        ASSERT_TRUE(allocator.allocate(kSize, &buf));
+        ASSERT_TRUE(allocator.free(buf, kSize));
+      }
+      ASSERT_TRUE(allocator.allocate(kSize + t, &kept[t]));
+    });
+  }
+  for (auto& thread : threads) {
+    thread.join();
+  }
+
+  int64_t expected = 0;
+  for (int t = 0; t < kNumThreads; ++t) {
+    expected += kSize + t;
+  }
+  ASSERT_EQ(allocator.getBytes(), expected);
+
+  // Freeing from a different thread than the allocating one moves bytes between stripes; only the sum matters.
+  for (int t = 0; t < kNumThreads; ++t) {
+    ASSERT_TRUE(allocator.free(kept[t], kSize + t));
+  }
+  ASSERT_EQ(allocator.getBytes(), 0);
 }

@@ -129,7 +129,7 @@ bool StdMemoryAllocator::allocate(int64_t size, void** out) {
   if (*out == nullptr) {
     return false;
   }
-  bytes_ += size;
+  bytes_.add(size);
   return true;
 }
 
@@ -141,7 +141,7 @@ bool StdMemoryAllocator::allocateZeroFilled(int64_t nmemb, int64_t size, void** 
   if (*out == nullptr) {
     return false;
   }
-  bytes_ += nmemb * size;
+  bytes_.add(nmemb * size);
   return true;
 }
 
@@ -151,7 +151,7 @@ bool StdMemoryAllocator::allocateAligned(uint64_t alignment, int64_t size, void*
   if (*out == nullptr) {
     return false;
   }
-  bytes_ += size;
+  bytes_.add(size);
   return true;
 }
 
@@ -160,7 +160,7 @@ bool StdMemoryAllocator::reallocate(void* p, int64_t size, int64_t newSize, void
   if (*out == nullptr) {
     return false;
   }
-  bytes_ += (newSize - size);
+  bytes_.add((newSize - size));
   return true;
 }
 
@@ -199,19 +199,19 @@ bool StdMemoryAllocator::reallocateAligned(void* p, uint64_t alignment, int64_t 
   memcpy(reallocatedP, p, std::min(size, newSize));
   std::free(p);
   *out = reallocatedP;
-  bytes_ += (newSize - size);
+  bytes_.add((newSize - size));
   return true;
 }
 
 bool StdMemoryAllocator::free(void* p, int64_t size) {
   GLUTEN_CHECK(p != nullptr, "free with nullptr");
   std::free(p);
-  bytes_ -= size;
+  bytes_.add(-size);
   return true;
 }
 
 int64_t StdMemoryAllocator::getBytes() const {
-  return bytes_;
+  return bytes_.sum();
 }
 
 int64_t StdMemoryAllocator::peakBytes() const {

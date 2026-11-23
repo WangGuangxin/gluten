@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include <array>
 #include <atomic>
 #include <cstdlib>
 #include <cstring>
@@ -95,7 +96,39 @@ class StdMemoryAllocator final : public MemoryAllocator {
   int64_t peakBytes() const override;
 
  private:
-  std::atomic_int64_t bytes_{0};
+  // The default allocator is a process-wide singleton shared by every task thread. A single atomic byte counter
+  // turns into a contended cache line when many threads allocate and free small (shuffle) buffers, so the count is
+  // spread over cache-line-sized stripes and only summed when read.
+  class StripedCounter {
+   public:
+    void add(int64_t delta) {
+      stripes_[stripeIndex()].value.fetch_add(delta, std::memory_order_relaxed);
+    }
+
+    int64_t sum() const {
+      int64_t total = 0;
+      for (const auto& s : stripes_) {
+        total += s.value.load(std::memory_order_relaxed);
+      }
+      return total;
+    }
+
+   private:
+    static constexpr size_t kNumStripes = 64;
+    struct alignas(64) Stripe {
+      std::atomic_int64_t value{0};
+    };
+
+    static size_t stripeIndex() {
+      static std::atomic<size_t> nextIndex{0};
+      thread_local const size_t index = nextIndex.fetch_add(1, std::memory_order_relaxed) % kNumStripes;
+      return index;
+    }
+
+    std::array<Stripe, kNumStripes> stripes_;
+  };
+
+  StripedCounter bytes_;
 };
 
 std::shared_ptr<MemoryAllocator> defaultMemoryAllocator();
