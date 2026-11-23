@@ -124,7 +124,10 @@ const std::string kEnableSystemExceptionStacktrace =
 const bool kEnableSystemExceptionStacktraceDefault = true;
 
 const std::string kMemoryUseHugePages = "spark.gluten.sql.columnar.backend.velox.memoryUseHugePages";
-const bool kMemoryUseHugePagesDefault = false;
+// Velox madvises its large contiguous allocations (hash tables, RowContainer runs) for transparent huge pages. With
+// THP in "madvise" mode, the default on most distributions, leaving this off makes every such allocation fault in 4 KB
+// at a time, which costs up to a third of the time of hash-aggregation-heavy stages.
+const bool kMemoryUseHugePagesDefault = true;
 
 const std::string kVeloxMemInitCapacity = "spark.gluten.sql.columnar.backend.velox.memInitCapacity";
 const uint64_t kVeloxMemInitCapacityDefault = 8 << 20;

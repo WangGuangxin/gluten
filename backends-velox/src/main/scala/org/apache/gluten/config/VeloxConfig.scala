@@ -506,7 +506,7 @@ object VeloxConfig extends ConfigRegistry {
     buildConf("spark.gluten.sql.columnar.backend.velox.memoryUseHugePages")
       .doc("Use explicit huge pages for Velox memory allocation.")
       .booleanConf
-      .createWithDefault(false)
+      .createWithDefault(true)
 
   val COLUMNAR_VELOX_ENABLE_SYSTEM_EXCEPTION_STACKTRACE =
     buildConf("spark.gluten.sql.columnar.backend.velox.enableSystemExceptionStacktrace")
