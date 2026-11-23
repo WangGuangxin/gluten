@@ -27,6 +27,7 @@
 #include <numeric>
 #include <sstream>
 #include <thread>
+#include "memory/ArrowBuffers.h"
 #include "shuffle/Options.h"
 #include "utils/StringUtil.h"
 #include "utils/Timer.h"
@@ -269,7 +270,7 @@ std::shared_ptr<arrow::Buffer> gluten::zeroLengthNullBuffer() {
 arrow::Result<std::unique_ptr<arrow::ResizableBuffer>> gluten::allocatePaddedBuffer(
     int64_t size,
     arrow::MemoryPool* pool) {
-  ARROW_ASSIGN_OR_RAISE(auto buffer, arrow::AllocateResizableBuffer(size + kSimdPadding, pool));
+  ARROW_ASSIGN_OR_RAISE(auto buffer, gluten::allocateResizableBuffer(size + kSimdPadding, pool));
   // Shrinking without shrink_to_fit keeps the capacity.
   RETURN_NOT_OK(buffer->Resize(size, /*shrink_to_fit=*/false));
   buffer->ZeroPadding();

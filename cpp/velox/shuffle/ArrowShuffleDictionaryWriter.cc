@@ -16,6 +16,7 @@
  */
 
 #include "shuffle/ArrowShuffleDictionaryWriter.h"
+#include "memory/ArrowBuffers.h"
 #include "shuffle/Utils.h"
 #include "utils/VeloxArrowUtils.h"
 
@@ -58,7 +59,7 @@ arrow::Status writeDictionaryBuffer(
 
   if (codec != nullptr) {
     size_t compressedLength = codec->MaxCompressedLen(size, data);
-    ARROW_ASSIGN_OR_RAISE(auto buffer, arrow::AllocateBuffer(compressedLength, pool));
+    ARROW_ASSIGN_OR_RAISE(auto buffer, gluten::allocateBuffer(compressedLength, pool));
     ARROW_ASSIGN_OR_RAISE(
         compressedLength, codec->Compress(size, data, compressedLength, buffer->mutable_data_as<uint8_t>()));
 
@@ -153,7 +154,7 @@ class BinaryShuffleDictionaryStorage : public ShuffleDictionaryStorage {
   arrow::Result<std::shared_ptr<arrow::Buffer>> offsetToLength(
       size_t numElements,
       const std::shared_ptr<arrow::Buffer>& offsets) const {
-    ARROW_ASSIGN_OR_RAISE(auto lengths, arrow::AllocateBuffer(sizeof(StringLengthType) * numElements, pool_));
+    ARROW_ASSIGN_OR_RAISE(auto lengths, gluten::allocateBuffer(sizeof(StringLengthType) * numElements, pool_));
     auto* rawLengths = lengths->mutable_data_as<StringLengthType>();
     const auto* rawOffsets = offsets->data_as<arrow::TypeTraits<MemoType>::OffsetType::c_type>();
 
@@ -193,7 +194,7 @@ arrow::Result<std::shared_ptr<arrow::Buffer>> updateDictionary(
     const std::shared_ptr<arrow::Buffer>&,
     const std::shared_ptr<DictionaryStorageImpl<ArrowType>>& dictionary,
     arrow::MemoryPool* pool) {
-  ARROW_ASSIGN_OR_RAISE(auto indices, arrow::AllocateBuffer(sizeof(ArrowDictionaryIndexType) * numRows, pool));
+  ARROW_ASSIGN_OR_RAISE(auto indices, gluten::allocateBuffer(sizeof(ArrowDictionaryIndexType) * numRows, pool));
   auto rawIndices = indices->mutable_data_as<ArrowDictionaryIndexType>();
 
   const auto* values = valueBuffer->data_as<typename ArrowType::c_type>();
@@ -222,7 +223,7 @@ arrow::Result<std::shared_ptr<arrow::Buffer>> updateDictionaryForBinary(
     const std::shared_ptr<arrow::Buffer>& valueBuffer,
     const std::shared_ptr<BinaryShuffleDictionaryStorage>& dictionary,
     arrow::MemoryPool* pool) {
-  ARROW_ASSIGN_OR_RAISE(auto indices, arrow::AllocateBuffer(sizeof(ArrowDictionaryIndexType) * numRows, pool));
+  ARROW_ASSIGN_OR_RAISE(auto indices, gluten::allocateBuffer(sizeof(ArrowDictionaryIndexType) * numRows, pool));
   auto rawIndices = indices->mutable_data_as<ArrowDictionaryIndexType>();
 
   const auto* lengths = lengthBuffer->data_as<uint32_t>();

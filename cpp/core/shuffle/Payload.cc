@@ -15,6 +15,7 @@
  * limitations under the License.
  */
 #include "shuffle/Payload.h"
+#include "memory/ArrowBuffers.h"
 
 #include <arrow/buffer.h>
 #include <arrow/io/memory.h>
@@ -153,7 +154,7 @@ arrow::Status compressAndFlush(
   ScopedTimer timer(&compressTime);
   auto maxCompressedLength = codec->MaxCompressedLen(buffer->size(), buffer->data());
   ARROW_ASSIGN_OR_RAISE(
-      auto compressed, arrow::AllocateResizableBuffer(sizeof(int64_t) * 2 + maxCompressedLength, pool));
+      auto compressed, gluten::allocateResizableBuffer(sizeof(int64_t) * 2 + maxCompressedLength, pool));
   auto output = compressed->mutable_data();
   ARROW_ASSIGN_OR_RAISE(auto compressedSize, compressBuffer(buffer, output, maxCompressedLength, codec));
 
@@ -200,7 +201,7 @@ arrow::Result<std::shared_ptr<arrow::Buffer>> readCompressedBuffer(
     // then uncompressedLength (already read), then actualCompressedLen, then data.
     int64_t actualCompressedLen;
     RETURN_NOT_OK(inputStream->Read(sizeof(int64_t), &actualCompressedLen));
-    ARROW_ASSIGN_OR_RAISE(auto compressed, arrow::AllocateResizableBuffer(actualCompressedLen, pool));
+    ARROW_ASSIGN_OR_RAISE(auto compressed, gluten::allocateResizableBuffer(actualCompressedLen, pool));
     RETURN_NOT_OK(inputStream->Read(actualCompressedLen, compressed->mutable_data()));
 
     timer.switchTo(&decompressTime);
@@ -216,7 +217,7 @@ arrow::Result<std::shared_ptr<arrow::Buffer>> readCompressedBuffer(
     RETURN_NOT_OK(inputStream->Read(uncompressedLength, uncompressed->mutable_data()));
     return uncompressed;
   }
-  ARROW_ASSIGN_OR_RAISE(auto compressed, arrow::AllocateResizableBuffer(compressedLength, pool));
+  ARROW_ASSIGN_OR_RAISE(auto compressed, gluten::allocateResizableBuffer(compressedLength, pool));
   RETURN_NOT_OK(inputStream->Read(compressedLength, compressed->mutable_data()));
 
   timer.switchTo(&decompressTime);
@@ -262,7 +263,7 @@ arrow::Result<std::unique_ptr<BlockPayload>> BlockPayload::fromBuffers(
     auto maxLength = maxCompressedLength(buffers, codec, bufferTypes);
 
     std::shared_ptr<arrow::Buffer> compressedBuffer;
-    ARROW_ASSIGN_OR_RAISE(compressedBuffer, arrow::AllocateResizableBuffer(maxLength, pool));
+    ARROW_ASSIGN_OR_RAISE(compressedBuffer, gluten::allocateResizableBuffer(maxLength, pool));
     auto* output = compressedBuffer->mutable_data();
 
     int64_t actualLength = 0;

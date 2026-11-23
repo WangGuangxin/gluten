@@ -16,6 +16,7 @@
  */
 
 #include "shuffle/VeloxHashShuffleWriter.h"
+#include "memory/ArrowBuffers.h"
 #include "memory/ArrowMemory.h"
 #include "memory/VeloxColumnarBatch.h"
 #include "shuffle/Utils.h"
@@ -110,7 +111,7 @@ arrow::Status collectFlatVectorBufferStringView(
   auto rawValues = flatVector->rawValues();
   // last offset is the totalStringSize
   auto lengthBufferSize = sizeof(gluten::StringLengthType) * flatVector->size();
-  ARROW_ASSIGN_OR_RAISE(auto lengthBuffer, arrow::AllocateResizableBuffer(lengthBufferSize, pool));
+  ARROW_ASSIGN_OR_RAISE(auto lengthBuffer, gluten::allocateResizableBuffer(lengthBufferSize, pool));
   auto* rawLength = reinterpret_cast<gluten::StringLengthType*>(lengthBuffer->mutable_data());
   uint64_t offset = 0;
   for (int32_t i = 0; i < flatVector->size(); i++) {
@@ -120,7 +121,7 @@ arrow::Status collectFlatVectorBufferStringView(
   }
   buffers.push_back(std::move(lengthBuffer));
 
-  ARROW_ASSIGN_OR_RAISE(auto valueBuffer, arrow::AllocateResizableBuffer(offset, pool));
+  ARROW_ASSIGN_OR_RAISE(auto valueBuffer, gluten::allocateResizableBuffer(offset, pool));
   auto raw = reinterpret_cast<char*>(valueBuffer->mutable_data());
   for (int32_t i = 0; i < flatVector->size(); i++) {
     if (flatVector->isNullAt(i)) {
@@ -231,7 +232,7 @@ arrow::Result<std::shared_ptr<arrow::Buffer>> VeloxHashShuffleWriter::generateCo
   auto serializedSize = serializer->maxSerializedSize();
   ARROW_ASSIGN_OR_RAISE(
       std::shared_ptr<arrow::ResizableBuffer> flushBuffer,
-      arrow::AllocateResizableBuffer(serializedSize, partitionBufferPool_.get()));
+      gluten::allocateResizableBuffer(serializedSize, partitionBufferPool_.get()));
 
   auto valueBuffer = arrow::SliceMutableBuffer(flushBuffer, 0, serializedSize);
   auto output = std::make_shared<arrow::io::FixedSizeBufferWriter>(valueBuffer);
@@ -656,7 +657,7 @@ arrow::Status VeloxHashShuffleWriter::splitValidityBuffer(const facebook::velox:
           // Init bitmap if it's null.
           ARROW_ASSIGN_OR_RAISE(
               auto validityBuffer,
-              arrow::AllocateResizableBuffer(
+              gluten::allocateResizableBuffer(
                   arrow::bit_util::BytesForBits(partitionBufferSize_[pid]), partitionBufferPool_.get()));
           dstAddrs[pid] = const_cast<uint8_t*>(validityBuffer->data());
           memset(validityBuffer->mutable_data(), 0xff, validityBuffer->capacity());
@@ -956,7 +957,7 @@ VeloxHashShuffleWriter::allocateValidityBuffer(uint32_t col, uint32_t partitionI
   if (inputHasNull_[col]) {
     ARROW_ASSIGN_OR_RAISE(
         auto validityBuffer,
-        arrow::AllocateResizableBuffer(arrow::bit_util::BytesForBits(newSize), partitionBufferPool_.get()));
+        gluten::allocateResizableBuffer(arrow::bit_util::BytesForBits(newSize), partitionBufferPool_.get()));
     // initialize all true once allocated
     memset(validityBuffer->mutable_data(), 0xff, validityBuffer->capacity());
     partitionValidityAddrs_[col][partitionId] = validityBuffer->mutable_data();
@@ -995,11 +996,12 @@ arrow::Status VeloxHashShuffleWriter::allocatePartitionBuffer(uint32_t partition
         std::shared_ptr<arrow::ResizableBuffer> lengthBuffer{};
         auto lengthBufferSize = newSize * kSizeOfStringLength;
         ARROW_ASSIGN_OR_RAISE(
-            lengthBuffer, arrow::AllocateResizableBuffer(lengthBufferSize, partitionBufferPool_.get()));
+            lengthBuffer, gluten::allocateResizableBuffer(lengthBufferSize, partitionBufferPool_.get()));
 
         std::shared_ptr<arrow::ResizableBuffer> valueBuffer{};
         auto valueBufferSize = valueBufferSizeForBinaryArray(binaryIdx, newSize);
-        ARROW_ASSIGN_OR_RAISE(valueBuffer, arrow::AllocateResizableBuffer(valueBufferSize, partitionBufferPool_.get()));
+        ARROW_ASSIGN_OR_RAISE(
+            valueBuffer, gluten::allocateResizableBuffer(valueBufferSize, partitionBufferPool_.get()));
 
         partitionBinaryAddrs_[binaryIdx][partitionId] =
             BinaryBuf(valueBuffer->mutable_data(), lengthBuffer->mutable_data(), valueBufferSize);
@@ -1013,7 +1015,7 @@ arrow::Status VeloxHashShuffleWriter::allocatePartitionBuffer(uint32_t partition
         std::shared_ptr<arrow::ResizableBuffer> valueBuffer{};
         ARROW_ASSIGN_OR_RAISE(
             valueBuffer,
-            arrow::AllocateResizableBuffer(valueBufferSizeForFixedWidthArray(i, newSize), partitionBufferPool_.get()));
+            gluten::allocateResizableBuffer(valueBufferSizeForFixedWidthArray(i, newSize), partitionBufferPool_.get()));
         partitionFixedWidthValueAddrs_[i][partitionId] = valueBuffer->mutable_data();
         buffers = {std::move(validityBuffer), std::move(valueBuffer)};
         break;
@@ -1164,7 +1166,7 @@ arrow::Result<std::vector<std::shared_ptr<arrow::Buffer>>> VeloxHashShuffleWrite
     auto serializedSize = complexTypeData_[partitionId]->maxSerializedSize();
     ARROW_ASSIGN_OR_RAISE(
         std::shared_ptr<arrow::ResizableBuffer> flushBuffer,
-        arrow::AllocateResizableBuffer(serializedSize, partitionBufferPool_.get()));
+        gluten::allocateResizableBuffer(serializedSize, partitionBufferPool_.get()));
     auto valueBuffer = arrow::SliceMutableBuffer(flushBuffer, 0, serializedSize);
     auto output = std::make_shared<arrow::io::FixedSizeBufferWriter>(valueBuffer);
     facebook::velox::serializer::presto::PrestoOutputStreamListener listener;
