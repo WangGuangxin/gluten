@@ -120,14 +120,15 @@ TEST_F(MemoryManagerTest, memoryAllocatorWithBlockReservation) {
   allocations.pop_back();
   allocator_->free(allocation.buffer, allocation.size);
   EXPECT_EQ(allocator_->getBytes(), currentBytes - allocation.size);
-  EXPECT_EQ(listener_->currentBytes(), kMemoryReservationBlockSizeDefault + initBytes);
+  // One block is in use. The block reservation keeps one spare block when usage shrinks.
+  EXPECT_EQ(listener_->currentBytes(), 2 * kMemoryReservationBlockSizeDefault + initBytes);
 
   currentBytes = allocator_->getBytes();
   allocation = allocations.back();
   allocations.pop_back();
   allocator_->free(allocation.buffer, allocation.size);
   EXPECT_EQ(allocator_->getBytes(), currentBytes - allocation.size);
-  EXPECT_EQ(listener_->currentBytes(), initBytes);
+  EXPECT_EQ(listener_->currentBytes(), kMemoryReservationBlockSizeDefault + initBytes);
 
   ASSERT_EQ(allocator_->getBytes(), 0);
 }

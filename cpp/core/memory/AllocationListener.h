@@ -45,24 +45,48 @@ class AllocationListener {
 };
 
 /// Memory changes will be round to specified block size which aim to decrease delegated listener calls.
+///
+/// When usage shrinks, one spare block is kept reserved instead of being returned immediately. Without
+/// this hysteresis, a usage pattern oscillating around a block boundary (e.g. a shuffle reader allocating
+/// and freeing a small decompression buffer for every input stream) turns every allocation and every free
+/// into a delegated call, which for the JNI listener means a round trip into Spark's globally synchronized
+/// memory manager. The spare block is returned on destruction.
 // The class must be thread safe
 class BlockAllocationListener final : public AllocationListener {
  public:
   BlockAllocationListener(AllocationListener* delegated, int64_t blockSize)
       : delegated_(delegated), blockSize_(blockSize) {}
 
+  ~BlockAllocationListener() override {
+    int64_t toRelease;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      toRelease = blocksReserved_ - requiredBlocks();
+      blocksReserved_ -= toRelease;
+    }
+    if (toRelease > 0) {
+      try {
+        delegated_->allocationChanged(-toRelease * static_cast<int64_t>(blockSize_));
+      } catch (const std::exception&) {
+        // Never throw from a destructor.
+      }
+    }
+  }
+
   void allocationChanged(int64_t diff) override {
     if (diff == 0) {
       return;
     }
-    int64_t granted = reserve(diff);
-    if (granted == 0) {
+    int64_t grantedBlocks = reserve(diff);
+    if (grantedBlocks == 0) {
       return;
     }
     try {
-      delegated_->allocationChanged(granted);
+      delegated_->allocationChanged(grantedBlocks * static_cast<int64_t>(blockSize_));
     } catch (const std::exception&) {
-      reserve(-diff);
+      std::lock_guard<std::mutex> lock(mutex_);
+      usedBytes_ -= diff;
+      blocksReserved_ -= grantedBlocks;
       throw;
     }
   }
@@ -76,20 +100,30 @@ class BlockAllocationListener final : public AllocationListener {
   }
 
  private:
+  static constexpr int64_t kSpareBlocks = 1;
+
+  // Must be called with mutex_ held.
+  inline int64_t requiredBlocks() const {
+    // ceil to get the required block number
+    return usedBytes_ <= 0 ? 0 : (usedBytes_ - 1) / static_cast<int64_t>(blockSize_) + 1;
+  }
+
+  // Returns the number of blocks to grant (positive) or release (negative).
   inline int64_t reserve(int64_t diff) {
     std::lock_guard<std::mutex> lock(mutex_);
     usedBytes_ += diff;
+    const int64_t required = requiredBlocks();
     int64_t newBlockCount;
-    if (usedBytes_ == 0) {
-      newBlockCount = 0;
+    if (required >= blocksReserved_) {
+      newBlockCount = required;
     } else {
-      // ceil to get the required block number
-      newBlockCount = (usedBytes_ - 1) / blockSize_ + 1;
+      // Shrinking: keep up to kSpareBlocks extra blocks to absorb oscillation around a block boundary.
+      newBlockCount = std::min(blocksReserved_, required + kSpareBlocks);
     }
-    int64_t bytesGranted = (newBlockCount - blocksReserved_) * blockSize_;
+    const int64_t blocksGranted = newBlockCount - blocksReserved_;
     blocksReserved_ = newBlockCount;
     peakBytes_ = std::max(peakBytes_, usedBytes_);
-    return bytesGranted;
+    return blocksGranted;
   }
 
   AllocationListener* const delegated_;
