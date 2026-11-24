@@ -24,7 +24,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.serializer.SerializerManager
 import org.apache.spark.shuffle._
 import org.apache.spark.shuffle.api.ShuffleExecutorComponents
-import org.apache.spark.storage.BlockId
+import org.apache.spark.storage.{BlockId, GlutenLocalShuffleBlocks}
 import org.apache.spark.util.collection.OpenHashSet
 
 import java.io.InputStream
@@ -209,6 +209,7 @@ class ColumnarShuffleManager(conf: SparkConf)
           }
         }
     }
+    GlutenLocalShuffleBlocks.removeShuffle(shuffleId)
     true
   }
 
@@ -216,6 +217,7 @@ class ColumnarShuffleManager(conf: SparkConf)
   override def stop(): Unit = {
     // SortShuffleManager.stop() stops shuffleBlockResolver.
     super.stop()
+    GlutenLocalShuffleBlocks.clear()
   }
 }
 

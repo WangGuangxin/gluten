@@ -30,14 +30,18 @@
 #include "utils/StringUtil.h"
 
 #include <arrow/c/bridge.h>
+#include <fcntl.h>
 #include <google/protobuf/stubs/common.h>
 #include <jni.h>
+#include <unistd.h>
 #include <algorithm>
+#include <cerrno>
 #include <cstdint>
 #include <filesystem>
 #include <limits>
 #include <optional>
 #include <string>
+#include <vector>
 
 using namespace gluten;
 
@@ -1344,6 +1348,89 @@ Java_org_apache_gluten_vectorized_ColumnarBatchSerializerJniWrapper_deserializeW
   auto batch = serializer->deserializeV3(safeData.elems(), size, requestedOpt);
   return ctx->saveObject(batch);
   JNI_METHOD_END(kInvalidObjectHandle)
+}
+
+// Native file segment reads for local shuffle blocks (see GlutenNativeFileSegmentInputStream). They keep shuffle file
+// descriptors out of the JDK's Cleaner, whose global lock serializes every Java file open and close.
+JNIEXPORT jint JNICALL Java_org_apache_spark_storage_GlutenNativeFileSegmentInputStream_nativeOpen( // NOLINT
+    JNIEnv* env,
+    jclass,
+    jstring path) {
+  const char* cpath = env->GetStringUTFChars(path, nullptr);
+  if (cpath == nullptr) {
+    return -ENOMEM;
+  }
+  int fd;
+  do {
+    fd = ::open(cpath, O_RDONLY | O_CLOEXEC);
+  } while (fd < 0 && errno == EINTR);
+  const int err = errno;
+  env->ReleaseStringUTFChars(path, cpath);
+  return fd >= 0 ? fd : -err;
+}
+
+JNIEXPORT jlong JNICALL Java_org_apache_spark_storage_GlutenNativeFileSegmentInputStream_nativePread( // NOLINT
+    JNIEnv*,
+    jclass,
+    jint fd,
+    jlong address,
+    jlong size,
+    jlong position) {
+  auto* dest = reinterpret_cast<uint8_t*>(address);
+  int64_t total = 0;
+  while (total < size) {
+    const ssize_t n = ::pread(fd, dest + total, static_cast<size_t>(size - total), position + total);
+    if (n < 0) {
+      if (errno == EINTR) {
+        continue;
+      }
+      return total > 0 ? total : -static_cast<jlong>(errno);
+    }
+    if (n == 0) {
+      break;
+    }
+    total += n;
+  }
+  return total;
+}
+
+JNIEXPORT jint JNICALL Java_org_apache_spark_storage_GlutenNativeFileSegmentInputStream_nativePreadToArray( // NOLINT
+    JNIEnv* env,
+    jclass,
+    jint fd,
+    jbyteArray dest,
+    jint off,
+    jint len,
+    jlong position) {
+  std::vector<uint8_t> buffer(static_cast<size_t>(len));
+  int64_t total = 0;
+  while (total < len) {
+    const ssize_t n = ::pread(fd, buffer.data() + total, static_cast<size_t>(len - total), position + total);
+    if (n < 0) {
+      if (errno == EINTR) {
+        continue;
+      }
+      if (total == 0) {
+        return -errno;
+      }
+      break;
+    }
+    if (n == 0) {
+      break;
+    }
+    total += n;
+  }
+  if (total > 0) {
+    env->SetByteArrayRegion(dest, off, static_cast<jsize>(total), reinterpret_cast<const jbyte*>(buffer.data()));
+  }
+  return static_cast<jint>(total);
+}
+
+JNIEXPORT void JNICALL Java_org_apache_spark_storage_GlutenNativeFileSegmentInputStream_nativeClose( // NOLINT
+    JNIEnv*,
+    jclass,
+    jint fd) {
+  ::close(fd);
 }
 
 #ifdef __cplusplus

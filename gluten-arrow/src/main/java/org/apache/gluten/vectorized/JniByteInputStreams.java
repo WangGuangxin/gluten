@@ -51,6 +51,10 @@ public final class JniByteInputStreams {
     if (LowCopyNettyJniByteInputStream.isSupported(unwrapped)) {
       return new LowCopyNettyJniByteInputStream(in);
     }
+    if (NativeFileSegmentJniByteInputStream.isSupported(unwrapped)) {
+      return new NativeFileSegmentJniByteInputStream(
+          in, (org.apache.spark.storage.GlutenNativeFileSegmentInputStream) unwrapped);
+    }
     if (LowCopyFileSegmentJniByteInputStream.isSupported(unwrapped)) {
       return new LowCopyFileSegmentJniByteInputStream(in);
     }
