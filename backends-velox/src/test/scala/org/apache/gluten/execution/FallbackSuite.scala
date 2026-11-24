@@ -20,7 +20,7 @@ import org.apache.gluten.config.{GlutenConfig, VeloxConfig}
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.DataFrame
-import org.apache.spark.sql.execution.{ColumnarBroadcastExchangeExec, ColumnarShuffleExchangeExec, SortExec, SparkPlan}
+import org.apache.spark.sql.execution.{ColumnarBroadcastExchangeExec, ColumnarShuffleExchangeExec, GlutenExplainUtils, SortExec, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanHelper, AQEShuffleReadExec}
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, SortMergeJoinExec}
@@ -399,6 +399,24 @@ class FallbackSuite extends VeloxWholeStageTransformerSuite with AdaptiveSparkPl
           assert(fallbackReasons.nonEmpty)
           assert(fallbackReasons.forall(_.contains("regexp_extract due to Pattern")))
       }
+    }
+  }
+
+  test("operators without an offload rule report an explicit fallback reason") {
+    import testImplicits._
+    GlutenSuiteUtils.withFallbackEventListener(spark.sparkContext) {
+      events =>
+        // Typed Dataset operations plan MapElements, which no Gluten rule converts.
+        spark.range(10).as[Long].map(_ * 2).filter(_ > 4).collect()
+        GlutenSuiteUtils.waitUntilEmpty(spark.sparkContext)
+        val fallbackReasons = events.flatMap(_.fallbackNodeToReason).toMap
+        val mapElements = fallbackReasons.filter(_._1.endsWith(" MapElements"))
+        assert(mapElements.nonEmpty, s"No MapElements fallback in $fallbackReasons")
+        assert(
+          mapElements.values.forall(
+            _ == "MapElements is not supported by Gluten: no rule converted it to a native operator"),
+          mapElements)
+        assert(!fallbackReasons.values.exists(_ == GlutenExplainUtils.NoFallbackReasonRecorded))
     }
   }
 

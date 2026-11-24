@@ -71,7 +71,11 @@ case class GlutenFallbackReporter(glutenConf: GlutenConfig, spark: SparkSession)
     val fallbacks = ArrayBuffer[(String, String)]()
     GlutenExplainUtils.visitFallbackNodes(
       plan,
-      onFallback = (node, reason) => {
+      onFallback = (node, visitedReason) => {
+        // This rule runs after all offload rules. A vanilla operator that still has no fallback
+        // reason was not converted by any rule, so report that instead of the generic message.
+        val missingReason = visitedReason == GlutenExplainUtils.NoFallbackReasonRecorded
+        val reason = if (missingReason) noOffloadRuleReason(node) else visitedReason
         if (log) {
           logFallbackReason(validationLogLevel, node.nodeName, reason)
           // Within the next AQE stage, the physical plan would be a new instance that does not
@@ -81,12 +85,20 @@ case class GlutenFallbackReporter(glutenConf: GlutenConfig, spark: SparkSession)
           FallbackTags
             .getOption(node)
             .foreach(tag => node.logicalLink.foreach(FallbackTags.add(_, tag)))
+          // Only the logical plan is tagged, which planning doesn't read, so the reason can't
+          // change how a later planning pass treats the physical operator.
+          if (missingReason) {
+            node.logicalLink.foreach(FallbackTags.add(_, reason))
+          }
         }
         fallbacks += ((node.nodeName, reason))
       }
     )
     fallbacks.toSeq
   }
+
+  private def noOffloadRuleReason(node: SparkPlan): String =
+    s"${node.nodeName} is not supported by Gluten: no rule converted it to a native operator"
 
   private def throwIfFallback(fallbacks: Seq[(String, String)]): Unit = {
     if (fallbacks.nonEmpty) {
