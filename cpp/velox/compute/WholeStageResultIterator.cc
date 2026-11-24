@@ -630,8 +630,10 @@ std::unordered_map<std::string, std::string> WholeStageResultIterator::getQueryC
         std::to_string(veloxCfg_->get<uint8_t>(kSpillPartitionBits, 3));
     configs[velox::core::QueryConfig::kSpillableReservationGrowthPct] =
         std::to_string(veloxCfg_->get<uint8_t>(kSpillableReservationGrowthPct, 25));
+    // Sort spill runs with PrefixSort like the in-memory sort does. TimSort over RowContainer::compareRows makes the
+    // spill of a large (e.g. skewed) partition several times slower to sort.
     configs[velox::core::QueryConfig::kSpillPrefixSortEnabled] =
-        veloxCfg_->get<std::string>(kSpillPrefixSortEnabled, "false");
+        veloxCfg_->get<std::string>(kSpillPrefixSortEnabled, "true");
     if (veloxCfg_->get<bool>(kSparkShuffleSpillCompress, true)) {
       configs[velox::core::QueryConfig::kSpillCompressionKind] =
           veloxCfg_->get<std::string>(kSpillCompressionKind, veloxCfg_->get<std::string>(kCompressionKind, "lz4"));
