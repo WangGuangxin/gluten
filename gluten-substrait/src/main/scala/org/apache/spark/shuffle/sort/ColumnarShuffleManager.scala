@@ -76,7 +76,7 @@ class ColumnarShuffleManager(conf: SparkConf)
   // `java.util.concurrent.ConcurrentMap`. The positional form compiles against all of them, but it
   // is signature-sensitive -- re-verify it when adding a new Spark version.
   override val shuffleBlockResolver =
-    new IndexShuffleBlockResolver(conf, null, taskIdMapsForShuffle)
+    new CachingIndexShuffleBlockResolver(conf, taskIdMapsForShuffle)
 
   /** Obtains a [[ShuffleHandle]] to pass to tasks. */
   override def registerShuffle[K, V, C](
@@ -199,6 +199,7 @@ class ColumnarShuffleManager(conf: SparkConf)
 
   /** Remove a shuffle's metadata from the ShuffleManager. */
   override def unregisterShuffle(shuffleId: Int): Boolean = {
+    shuffleBlockResolver.removeShuffle(shuffleId)
     Option(taskIdMapsForShuffle.remove(shuffleId)).foreach {
       mapTaskIds =>
         // The block-migration path mutates this set under the same lock; iterating without it
