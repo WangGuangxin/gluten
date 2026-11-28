@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <array>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -531,6 +532,17 @@ class VeloxHashShuffleWriter : public VeloxShuffleWriter {
   std::vector<char> checksumBuffer_;
 
   void computeRowBasedChecksums(const facebook::velox::RowVector& rv);
+
+  // Columnar implementation of computeRowBasedChecksums for rows whose top-level fields are all scalar or string
+  // types. Produces byte-identical UnsafeRow images (and therefore identical checksums) to UnsafeRowFast. Returns
+  // false if the row type is not supported, in which case the row-at-a-time path is used.
+  bool computeRowBasedChecksumsColumnar(const facebook::velox::RowVector& rv);
+
+  // Lazily computed: whether the columnar checksum path supports the input row type.
+  std::optional<bool> columnarChecksumSupported_;
+  std::vector<int32_t> checksumRowSizes_;
+  std::vector<int64_t> checksumRowOffsets_;
+  std::vector<int32_t> checksumVarOffsets_;
 }; // class VeloxHashBasedShuffleWriter
 
 } // namespace gluten

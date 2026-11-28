@@ -30,6 +30,9 @@
 #include "tests/utils/TestStreamReader.h"
 #include "tests/utils/TestUtils.h"
 #include "utils/VeloxArrowUtils.h"
+#include "velox/external/xxhash/xxhash.h"
+#include "velox/row/UnsafeRowFast.h"
+#include "velox/type/DecimalUtil.h"
 
 #include "velox/vector/tests/utils/VectorTestBase.h"
 
@@ -732,6 +735,120 @@ TEST_F(VeloxShuffleReaderStreamMergeTest, hashReaderDoesNotReuseDictionaryAcross
   facebook::velox::test::assertEqualVectors(
       dictionaryInput, std::dynamic_pointer_cast<VeloxColumnarBatch>(iter->next())->getRowVector());
   EXPECT_THROW((void)iter->hasNext(), GlutenException);
+}
+
+class RowBasedChecksumShuffleWriterTest : public ::testing::Test, public VeloxShuffleWriterTestBase {
+ protected:
+  void SetUp() override {
+    VeloxShuffleWriterTestBase::setUpTestData();
+  }
+
+  // Writes all vectors to a single partition and returns the partition's row-based checksum.
+  int64_t writerChecksum(const std::vector<RowVectorPtr>& vectors) {
+    GLUTEN_ASSIGN_OR_THROW(auto dataFile, createTempShuffleFile(localDirs_[0]));
+    auto options = std::make_shared<HashShuffleWriterOptions>();
+    options->partitioning = Partitioning::kRoundRobin;
+    options->rowBasedChecksumEnabled = true;
+    auto partitionWriter = createPartitionWriter(
+        PartitionWriterType::kLocal, 1, dataFile, localDirs_, arrow::Compression::UNCOMPRESSED, 0, 0, false);
+    GLUTEN_ASSIGN_OR_THROW(
+        auto shuffleWriter,
+        VeloxShuffleWriter::create(
+            ShuffleWriterType::kHashShuffle, 1, partitionWriter, options, getDefaultMemoryManager()));
+    for (const auto& vector : vectors) {
+      GLUTEN_THROW_NOT_OK(
+          shuffleWriter->write(std::make_shared<VeloxColumnarBatch>(vector), ShuffleWriter::kMinMemLimit));
+    }
+    GLUTEN_THROW_NOT_OK(shuffleWriter->stop());
+    const auto& checksums = shuffleWriter->rowBasedChecksums();
+    VELOX_CHECK_EQ(checksums.size(), 1);
+    return checksums[0];
+  }
+
+  // Spark's row-based checksum: XXH64 of every row's UnsafeRow image, folded with xor and sum.
+  static int64_t expectedChecksum(const std::vector<RowVectorPtr>& vectors) {
+    int64_t checksumXor = 0;
+    int64_t checksumSum = 0;
+    std::vector<char> buffer;
+    for (const auto& vector : vectors) {
+      row::UnsafeRowFast fast(vector);
+      for (vector_size_t row = 0; row < vector->size(); ++row) {
+        const auto size = fast.rowSize(row);
+        buffer.assign(size, 0);
+        fast.serialize(row, buffer.data());
+        const auto hash = static_cast<int64_t>(XXH64(buffer.data(), size, 0));
+        checksumXor ^= hash;
+        checksumSum += hash;
+      }
+    }
+    const int64_t rotated = (static_cast<uint64_t>(checksumSum) << 27) | (static_cast<uint64_t>(checksumSum) >> 37);
+    return checksumXor ^ rotated;
+  }
+};
+
+TEST_F(RowBasedChecksumShuffleWriterTest, scalarTypes) {
+  // Every type that the columnar checksum serializes itself, with nulls, inline and out-of-line strings, and short
+  // and long decimals whose byte arrays have different lengths.
+  const auto longString = std::string(100, 'x');
+  auto makeInput = [&](int32_t seed) {
+    const auto numRows = 1'000;
+    return makeRowVector({
+        makeFlatVector<bool>(
+            numRows, [&](auto row) { return (row + seed) % 3 == 0; }, nullEvery(7)),
+        makeFlatVector<int8_t>(
+            numRows, [&](auto row) { return static_cast<int8_t>(row * 31 + seed); }, nullEvery(5)),
+        makeFlatVector<int16_t>(numRows, [&](auto row) { return static_cast<int16_t>(row * 977 - seed); }),
+        makeFlatVector<int32_t>(
+            numRows, [&](auto row) { return row * 7919 + seed; }, nullEvery(11)),
+        makeFlatVector<int64_t>(numRows, [&](auto row) { return (int64_t{row} << 40) - seed; }),
+        makeFlatVector<float>(
+            numRows, [&](auto row) { return row * 0.5f - seed; }, nullEvery(13)),
+        makeFlatVector<double>(numRows, [&](auto row) { return row * -1.25 + seed; }),
+        makeFlatVector<Timestamp>(
+            numRows, [&](auto row) { return Timestamp(row * 1'000 + seed, row * 1'000); }, nullEvery(9)),
+        makeFlatVector<int32_t>(
+            numRows, [&](auto row) { return row - 500 + seed; }, nullEvery(4), DATE()),
+        makeFlatVector<std::string>(
+            numRows,
+            [&](auto row) { return row % 2 == 0 ? std::to_string(row + seed) : longString + std::to_string(row); },
+            nullEvery(3)),
+        makeFlatVector<std::string>(
+            numRows,
+            [&](auto row) { return std::string(row % 20, static_cast<char>('a' + row % 26)); },
+            nullptr,
+            VARBINARY()),
+        makeFlatVector<int64_t>(
+            numRows, [&](auto row) { return row * 123'457 - 50'000'000 + seed; }, nullEvery(6), DECIMAL(12, 4)),
+        makeFlatVector<int128_t>(
+            numRows,
+            [&](auto row) {
+              const int128_t magnitude = row % 4 == 0 ? DecimalUtil::kLongDecimalMax : int128_t{row} << (row % 100);
+              return row % 2 == 0 ? magnitude : -magnitude;
+            },
+            nullEvery(8),
+            DECIMAL(38, 2)),
+    });
+  };
+  const std::vector<RowVectorPtr> input = {makeInput(0), makeInput(17), makeInput(-3)};
+  ASSERT_EQ(writerChecksum(input), expectedChecksum(input));
+}
+
+TEST_F(RowBasedChecksumShuffleWriterTest, allNullsAndEmptyStrings) {
+  auto input = makeRowVector({
+      makeNullableFlatVector<int64_t>({std::nullopt, std::nullopt, std::nullopt}),
+      makeNullableFlatVector<std::string>({"", std::nullopt, ""}),
+      makeNullableFlatVector<int128_t>({std::nullopt, 0, std::nullopt}, DECIMAL(20, 0)),
+  });
+  ASSERT_EQ(writerChecksum({input}), expectedChecksum({input}));
+}
+
+TEST_F(RowBasedChecksumShuffleWriterTest, complexTypeFallsBackToRowAtATime) {
+  auto input = makeRowVector({
+      makeFlatVector<int32_t>({1, 2, 3}),
+      makeArrayVector<int64_t>({{1, 2}, {}, {3}}),
+      makeNullableFlatVector<std::string>({"a", std::nullopt, "a long string that is not inlined"}),
+  });
+  ASSERT_EQ(writerChecksum({input}), expectedChecksum({input}));
 }
 
 TEST_P(SinglePartitioningShuffleWriterTest, single) {

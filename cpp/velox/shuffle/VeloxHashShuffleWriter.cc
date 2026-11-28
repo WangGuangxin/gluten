@@ -27,11 +27,13 @@
 #include "velox/common/base/Nulls.h"
 #include "velox/external/xxhash/xxhash.h"
 #include "velox/row/UnsafeRowFast.h"
+#include "velox/type/DecimalUtil.h"
 #include "velox/type/HugeInt.h"
 #include "velox/type/Timestamp.h"
 #include "velox/type/Type.h"
 #include "velox/vector/BaseVector.h"
 #include "velox/vector/ComplexVector.h"
+#include "velox/vector/DecodedVector.h"
 
 #if defined(__x86_64__)
 #include <immintrin.h>
@@ -1634,8 +1636,183 @@ bool VeloxHashShuffleWriter::isExtremelyLargeBatch(facebook::velox::RowVectorPtr
   return (rv->size() > maxBatchSize_ && maxBatchSize_ > 0);
 }
 
+namespace {
+
+using facebook::velox::TypeKind;
+
+constexpr int32_t kUnsafeRowFieldWidth = 8;
+
+inline int32_t unsafeRowAlignBytes(int32_t numBytes) {
+  return facebook::velox::bits::roundUp(numBytes, 8);
+}
+
+// Top-level field kinds handled by the columnar checksum path. Must mirror UnsafeRowFast's encoding.
+bool isColumnarChecksumKind(const facebook::velox::TypePtr& type) {
+  switch (type->kind()) {
+    case TypeKind::BOOLEAN:
+    case TypeKind::TINYINT:
+    case TypeKind::SMALLINT:
+    case TypeKind::INTEGER:
+    case TypeKind::BIGINT:
+    case TypeKind::REAL:
+    case TypeKind::DOUBLE:
+    case TypeKind::TIMESTAMP:
+    case TypeKind::VARCHAR:
+    case TypeKind::VARBINARY:
+    case TypeKind::HUGEINT:
+      return true;
+    default:
+      return false;
+  }
+}
+
+} // namespace
+
+bool VeloxHashShuffleWriter::computeRowBasedChecksumsColumnar(const facebook::velox::RowVector& rv) {
+  using namespace facebook::velox;
+  const auto& rowType = rv.type()->asRow();
+  if (!columnarChecksumSupported_.has_value()) {
+    bool supported = true;
+    for (const auto& child : rowType.children()) {
+      supported = supported && isColumnarChecksumKind(child);
+    }
+    columnarChecksumSupported_ = supported;
+  }
+  if (!*columnarChecksumSupported_) {
+    return false;
+  }
+
+  const auto numRows = rv.size();
+  const auto numFields = static_cast<int32_t>(rv.childrenSize());
+  const int32_t nullBytes = static_cast<int32_t>(bits::nwords(numFields) * 8);
+  const int32_t fixedBytes = nullBytes + numFields * kUnsafeRowFieldWidth;
+
+  std::vector<DecodedVector> decoded;
+  decoded.reserve(numFields);
+  for (int32_t i = 0; i < numFields; ++i) {
+    decoded.emplace_back(*rv.childAt(i));
+  }
+
+  // Process in chunks so that the serialized rows stay cache resident while they are hashed.
+  constexpr vector_size_t kChunkRows = 1024;
+  checksumRowSizes_.resize(std::min<vector_size_t>(numRows, kChunkRows));
+  checksumRowOffsets_.resize(checksumRowSizes_.size() + 1);
+  checksumVarOffsets_.resize(checksumRowSizes_.size());
+
+  for (vector_size_t begin = 0; begin < numRows; begin += kChunkRows) {
+    const vector_size_t n = std::min<vector_size_t>(kChunkRows, numRows - begin);
+    int32_t* sizes = checksumRowSizes_.data();
+    std::fill(sizes, sizes + n, fixedBytes);
+
+    // 1. Row sizes: fixed part plus 8-byte aligned variable-width payloads.
+    for (int32_t i = 0; i < numFields; ++i) {
+      const auto kind = rowType.childAt(i)->kind();
+      if (kind != TypeKind::VARCHAR && kind != TypeKind::VARBINARY && kind != TypeKind::HUGEINT) {
+        continue;
+      }
+      auto& d = decoded[i];
+      for (vector_size_t r = 0; r < n; ++r) {
+        const auto row = begin + r;
+        if (d.isNullAt(row)) {
+          continue;
+        }
+        const int32_t len = kind == TypeKind::HUGEINT ? DecimalUtil::getByteArrayLength(d.valueAt<int128_t>(row))
+                                                      : static_cast<int32_t>(d.valueAt<StringView>(row).size());
+        sizes[r] += unsafeRowAlignBytes(len);
+      }
+    }
+
+    int64_t* offsets = checksumRowOffsets_.data();
+    offsets[0] = 0;
+    for (vector_size_t r = 0; r < n; ++r) {
+      offsets[r + 1] = offsets[r] + sizes[r];
+    }
+    const int64_t totalBytes = offsets[n];
+    if (checksumBuffer_.size() < static_cast<size_t>(totalBytes)) {
+      checksumBuffer_.resize(totalBytes);
+    }
+    char* buf = checksumBuffer_.data();
+    std::memset(buf, 0, totalBytes);
+    int32_t* varOffsets = checksumVarOffsets_.data();
+    std::fill(varOffsets, varOffsets + n, fixedBytes);
+
+    // 2. Serialize column by column.
+    for (int32_t i = 0; i < numFields; ++i) {
+      auto& d = decoded[i];
+      const auto kind = rowType.childAt(i)->kind();
+      const int64_t slot = nullBytes + static_cast<int64_t>(i) * kUnsafeRowFieldWidth;
+      const bool mayHaveNulls = d.mayHaveNulls();
+
+#define GLUTEN_CHECKSUM_FIXED_LOOP(WRITE)  \
+  for (vector_size_t r = 0; r < n; ++r) {  \
+    const auto row = begin + r;            \
+    char* rowBuf = buf + offsets[r];       \
+    if (mayHaveNulls && d.isNullAt(row)) { \
+      bits::setBit(rowBuf, i, true);       \
+      continue;                            \
+    }                                      \
+    WRITE;                                 \
+  }
+
+      switch (kind) {
+        case TypeKind::BOOLEAN:
+          GLUTEN_CHECKSUM_FIXED_LOOP(*reinterpret_cast<bool*>(rowBuf + slot) = d.valueAt<bool>(row));
+          break;
+        case TypeKind::TIMESTAMP:
+          GLUTEN_CHECKSUM_FIXED_LOOP(*reinterpret_cast<int64_t*>(rowBuf + slot) = d.valueAt<Timestamp>(row).toMicros());
+          break;
+        case TypeKind::TINYINT:
+        case TypeKind::SMALLINT:
+        case TypeKind::INTEGER:
+        case TypeKind::BIGINT:
+        case TypeKind::REAL:
+        case TypeKind::DOUBLE: {
+          const auto valueBytes = rowType.childAt(i)->cppSizeInBytes();
+          const char* data = d.data<char>();
+          GLUTEN_CHECKSUM_FIXED_LOOP(std::memcpy(rowBuf + slot, data + d.index(row) * valueBytes, valueBytes));
+          break;
+        }
+        case TypeKind::VARCHAR:
+        case TypeKind::VARBINARY:
+          GLUTEN_CHECKSUM_FIXED_LOOP({
+            const auto value = d.valueAt<StringView>(row);
+            const uint64_t varOffset = varOffsets[r];
+            std::memcpy(rowBuf + varOffset, value.data(), value.size());
+            *reinterpret_cast<uint64_t*>(rowBuf + slot) = varOffset << 32 | static_cast<uint64_t>(value.size());
+            varOffsets[r] += unsafeRowAlignBytes(value.size());
+          });
+          break;
+        case TypeKind::HUGEINT:
+          GLUTEN_CHECKSUM_FIXED_LOOP({
+            const uint64_t varOffset = varOffsets[r];
+            const int32_t size = DecimalUtil::toByteArray(d.valueAt<int128_t>(row), rowBuf + varOffset);
+            *reinterpret_cast<uint64_t*>(rowBuf + slot) = varOffset << 32 | static_cast<uint64_t>(size);
+            varOffsets[r] += unsafeRowAlignBytes(size);
+          });
+          break;
+        default:
+          VELOX_UNREACHABLE();
+      }
+#undef GLUTEN_CHECKSUM_FIXED_LOOP
+    }
+
+    // 3. Hash every row and fold it into its partition's checksum.
+    for (vector_size_t r = 0; r < n; ++r) {
+      const auto pid = row2Partition_[begin + r];
+      const auto hash = static_cast<int64_t>(XXH64(buf + offsets[r], sizes[r], 0));
+      checksumXor_[pid] ^= hash;
+      checksumSum_[pid] += hash;
+    }
+  }
+  return true;
+}
+
 void VeloxHashShuffleWriter::computeRowBasedChecksums(const facebook::velox::RowVector& rv) {
   if (!rowBasedChecksumEnabled_) {
+    return;
+  }
+
+  if (computeRowBasedChecksumsColumnar(rv)) {
     return;
   }
 
