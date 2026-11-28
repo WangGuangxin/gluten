@@ -1179,6 +1179,31 @@ abstract class VeloxAggregateFunctionsSuite extends VeloxWholeStageTransformerSu
       df => assert(getExecutedPlan(df).count(_.isInstanceOf[HashAggregateExecTransformer]) == 2))
   }
 
+  test("rebind agg buffer with subquery when distinct agg shares a buffer name") {
+    // The scalar subquery makes Spark clone merge_avg, so its buffer attributes must be rebound
+    // by name. The avg buffer `count` must not be confused with the buffer of
+    // partial_count(distinct id), which sits in the same aggregate node but reads raw input.
+    Seq(
+      "count(distinct id)",
+      "count(distinct id), sum(distinct key)",
+      "count(distinct id), count(value)").foreach {
+      distinctAggs =>
+        runQueryAndCompare(s"""
+                              |select g, $distinctAggs,
+                              |  avg(case when key = (select id from range(0, 5) where id = 2)
+                              |    then value end)
+                              |from (select id, id % 5 as key, id % 3 as g,
+                              |  cast(id as float) as value from range(0, 30, 1, 4))
+                              |group by g order by g
+                              |""".stripMargin) {
+          df =>
+            val aggs = getExecutedPlan(df).filter(_.isInstanceOf[BaseAggregateExec])
+            assert(aggs.size >= 4)
+            assert(aggs.forall(_.isInstanceOf[HashAggregateExecTransformer]))
+        }
+    }
+  }
+
   test("collect_list null inputs") {
     runQueryAndCompare("""
                          |select collect_list(a) from values (1), (-1), (null) AS tab(a)
