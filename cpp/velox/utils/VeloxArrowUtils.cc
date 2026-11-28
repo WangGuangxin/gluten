@@ -16,6 +16,7 @@
  */
 
 #include "utils/VeloxArrowUtils.h"
+#include "memory/ArrowBuffers.h"
 
 #include <arrow/buffer.h>
 
@@ -82,7 +83,7 @@ arrow::Result<std::shared_ptr<arrow::Buffer>> toArrowBuffer(
   if (buffer == nullptr) {
     return nullptr;
   }
-  ARROW_ASSIGN_OR_RAISE(auto arrowBuffer, arrow::AllocateResizableBuffer(buffer->size(), pool));
+  ARROW_ASSIGN_OR_RAISE(auto arrowBuffer, gluten::allocateResizableBuffer(buffer->size(), pool));
   gluten::fastCopy(arrowBuffer->mutable_data(), buffer->as<void>(), buffer->size());
   return arrowBuffer;
 }

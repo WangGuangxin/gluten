@@ -21,6 +21,7 @@
 #include <arrow/ipc/writer.h>
 #include <arrow/type.h>
 #include <arrow/util/io_util.h>
+#include "memory/ArrowBuffers.h"
 
 #include <chrono>
 #include <filesystem>
@@ -245,7 +246,7 @@ class ShuffleCompressedOutputStream : public arrow::io::OutputStream {
 
   arrow::Status Init(arrow::util::Codec* codec) {
     ARROW_ASSIGN_OR_RAISE(compressor_, codec->MakeCompressor());
-    ARROW_ASSIGN_OR_RAISE(compressed_, AllocateResizableBuffer(compressionBufferSize_, pool_));
+    ARROW_ASSIGN_OR_RAISE(compressed_, gluten::allocateResizableBuffer(compressionBufferSize_, pool_));
     compressedPos_ = 0;
     isOpen_ = true;
     return arrow::Status::OK();
@@ -372,7 +373,7 @@ class CompressedInputStream : public arrow::io::InputStream {
   }
 
   arrow::Result<std::shared_ptr<arrow::Buffer>> Read(int64_t nbytes) override {
-    ARROW_ASSIGN_OR_RAISE(auto buf, arrow::AllocateResizableBuffer(nbytes, pool_));
+    ARROW_ASSIGN_OR_RAISE(auto buf, gluten::allocateResizableBuffer(nbytes, pool_));
     ARROW_ASSIGN_OR_RAISE(int64_t bytes_read, Read(nbytes, buf->mutable_data()));
     RETURN_NOT_OK(buf->Resize(bytes_read));
     return std::move(buf);
@@ -410,7 +411,7 @@ class CompressedInputStream : public arrow::io::InputStream {
     int64_t decompress_size = kDecompressSize;
 
     while (true) {
-      ARROW_ASSIGN_OR_RAISE(decompressed_, AllocateResizableBuffer(decompress_size, pool_));
+      ARROW_ASSIGN_OR_RAISE(decompressed_, gluten::allocateResizableBuffer(decompress_size, pool_));
       decompressed_pos_ = 0;
 
       int64_t input_len = compressed_->size() - compressed_pos_;
